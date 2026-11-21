@@ -222,6 +222,7 @@
 | 2026-11-21 | `pnpm build` | ✅ | API/playout/web built |
 | 2026-11-21 | `pnpm config:validate` | ✅ | Example config valid |
 | 2026-11-21 | runtime smoke | ✅ | API `/api/health` returns ok; worker starts and heartbeats |
+| 2026-11-21 | `pnpm dev` smoke | ✅ | API health ok; Vite serves `/` with HTTP 200; worker heartbeat |
 
 ## Blockers / open decisions
 

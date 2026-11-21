@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm build:packages && pnpm --parallel --filter @radio/api --filter @radio/playout --filter @radio/web dev",
+    "dev": "pnpm build:packages && pnpm -r --parallel --filter @radio/api --filter @radio/playout --filter @radio/web dev",
     "build": "tsc -b && pnpm --filter @radio/web build",
     "build:packages": "tsc -b",
     "typecheck": "tsc -b --pretty false && pnpm --filter @radio/web typecheck",
