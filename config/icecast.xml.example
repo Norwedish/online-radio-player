@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Production Icecast config sketch. Generated/tuned by install.sh (M13.4). -->
+<icecast>
+  <limits>
+    <clients>2000</clients>
+    <sources>10</sources>
+    <queue-size>524288</queue-size>
+    <client-timeout>30</client-timeout>
+    <source-timeout>10</source-timeout>
+  </limits>
+
+  <authentication>
+    <source-password>CHANGE_ME</source-password>
+    <relay-password>CHANGE_ME</relay-password>
+    <admin-user>admin</admin-user>
+    <admin-password>CHANGE_ME</admin-password>
+  </authentication>
+
+  <hostname>radio.example.com</hostname>
+  <location>Station location</location>
+
+  <listen-socket>
+    <port>8000</port>
+    <bind-address>127.0.0.1</bind-address>
+  </listen-socket>
+
+  <mount>
+    <mount-name>/hq.mp3</mount-name>
+    <public>1</public>
+    <charset>UTF-8</charset>
+    <stream-name>Station HQ</stream-name>
+  </mount>
+  <mount>
+    <mount-name>/mobile.mp3</mount-name>
+    <public>1</public>
+  </mount>
+  <mount>
+    <mount-name>/opus.ogg</mount-name>
+    <public>1</public>
+  </mount>
+  <mount>
+    <mount-name>/aac.aac</mount-name>
+    <public>1</public>
+  </mount>
+  <mount>
+    <mount-name>/hls</mount-name>
+    <public>1</public>
+    <!-- HLS options depend on the installed Icecast version; verify in M0.6. -->
+  </mount>
+
+  <paths>
+    <basedir>/usr/share/icecast</basedir>
+    <webroot>/usr/share/icecast/web</webroot>
+    <logdir>/var/log/icecast</logdir>
+    <pidfile>/run/icecast/icecast.pid</pidfile>
+  </paths>
+
+  <logging>
+    <accesslog>access.log</accesslog>
+    <errorlog>error.log</errorlog>
+    <loglevel>3</loglevel>
+  </logging>
+</icecast>

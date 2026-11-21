@@ -1,0 +1,19 @@
+{
+  "name": "@radio/playout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@radio/core": "workspace:*",
+    "@radio/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0"
+  }
+}

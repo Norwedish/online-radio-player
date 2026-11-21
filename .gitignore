@@ -1,0 +1,39 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+config/station.json
+config/secrets.env
+
+# Runtime data
+data/
+logs/
+media/
+recordings/
+backups/
+hls/
+artwork/
+
+# Thimeo Stereo Tool is commercial; never commit binaries, presets or licenses
+*.lic
+*.sds
+stereotool*
+!config/stereotool.example.sds
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Test artifacts
+playwright-report/
+test-results/

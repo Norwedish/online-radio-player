@@ -1,0 +1,102 @@
+{
+  "station": {
+    "id": 1,
+    "name": "STATION_NAME",
+    "timezone": "Europe/Amsterdam",
+    "locale": "en",
+    "logoUrl": "/branding/logo.png",
+    "colors": { "primary": "#22c55e", "background": "#0b0f0e" }
+  },
+  "audio": {
+    "sampleRate": 48000,
+    "channels": 2,
+    "format": "s16le",
+    "mixFrames": 64,
+    "bufferMs": 100,
+    "masterGain": 1.0,
+    "targetLufs": -16,
+    "boundaryToleranceSeconds": 45,
+    "silenceThresholdDb": -60,
+    "silenceSeconds": 10,
+    "emergencyFile": "/srv/radio/media/Emergency/emergency-loop.mp3"
+  },
+  "stereotool": {
+    "enabled": true,
+    "binary": "/opt/stereotool/stereotool_cmd",
+    "preset": "/etc/radio/stereotool.sds",
+    "license": "/opt/stereotool/stereotool.lic",
+    "inputMode": "stdio-pcm",
+    "restart": { "maxAttempts": 5, "backoffMs": 2000 },
+    "bypassOnFailure": true
+  },
+  "icecast": {
+    "host": "127.0.0.1",
+    "port": 8000,
+    "sourcePasswordEnv": "ICECAST_SOURCE_PASSWORD",
+    "adminUser": "admin",
+    "adminPasswordEnv": "ICECAST_ADMIN_PASSWORD",
+    "mounts": [
+      { "name": "hq.mp3", "codec": "mp3", "bitrate": "320k", "public": true },
+      { "name": "mobile.mp3", "codec": "mp3", "bitrate": "128k", "public": true },
+      { "name": "opus.ogg", "codec": "opus", "bitrate": "96k", "public": true },
+      { "name": "aac.aac", "codec": "aac", "bitrate": "96k", "public": true }
+    ],
+    "hls": { "enabled": true, "mount": "/hls" }
+  },
+  "scheduler": {
+    "generator": {
+      "generateHour00At": "23:00",
+      "generateRestAt": "00:05",
+      "separationTrackHours": 4,
+      "separationArtistHours": 1,
+      "hourMinSeconds": 3540,
+      "hourMaxSeconds": 3720,
+      "overrunAllowedSeconds": 90,
+      "tailWindowSeconds": 300,
+      "tailOverrunSeconds": 45,
+      "newsReserveSeconds": 180
+    },
+    "news": {
+      "hour": "Nieuws/nieuws-heel-uur.mp3",
+      "half": "Nieuws/nieuws-half-uur.mp3"
+    },
+    "live": {
+      "maxConcurrent": 1,
+      "duckDb": -12,
+      "duckAttackMs": 50,
+      "duckReleaseMs": 500,
+      "noShowGraceSeconds": 120,
+      "noShowFallbackPlaylistId": null
+    }
+  },
+  "requests": {
+    "autoApprove": false,
+    "cooldownMinutes": 60,
+    "maxPerHour": 3,
+    "profanityFilter": true,
+    "dedications": true
+  },
+  "retention": {
+    "historyDays": 90,
+    "logsDays": 30,
+    "requestsDays": 30,
+    "recordingsDays": 30
+  },
+  "backups": {
+    "dir": "/srv/radio/backups",
+    "dailyKeep": 14,
+    "weeklyKeep": 8
+  },
+  "email": {
+    "smtpHost": "smtp.example.com",
+    "smtpPort": 587,
+    "from": "radio@example.com"
+  },
+  "webhooks": {
+    "alerts": []
+  },
+  "metrics": {
+    "enabled": true,
+    "path": "/metrics"
+  }
+}

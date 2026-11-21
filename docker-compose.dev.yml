@@ -1,0 +1,12 @@
+services:
+  icecast:
+    image: moul/icecast:latest
+    container_name: radio-icecast-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config/icecast.dev.xml:/etc/icecast2/icecast.xml:ro
+    restart: unless-stopped
+
+# Note: moul/icecast may ship Icecast 2.4.x. HLS verification (M0.6) may need a
+# 2.5/2.6 image or a native Debian package; document the result in the ADR.
