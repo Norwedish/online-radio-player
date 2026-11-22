@@ -1,7 +1,13 @@
 :root {
   color-scheme: dark;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   background: #080b0a;
   color: #e7f0eb;
   font-synthesis: none;
@@ -155,6 +161,89 @@ h3 {
   flex: none;
 }
 
+.signal-idle {
+  background: #64748b;
+  box-shadow: 0 0 0 5px rgba(100, 116, 139, 0.12);
+}
+
+.badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge-live .signal {
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 9px rgba(34, 197, 94, 0.03);
+  }
+}
+
+.player {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 32px;
+  align-items: stretch;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
+}
+
+.player-art {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 20px;
+  border: 1px solid rgba(126, 226, 168, 0.25);
+  background:
+    radial-gradient(circle at 50% 40%, rgba(34, 197, 94, 0.35), transparent 62%),
+    linear-gradient(160deg, rgba(34, 197, 94, 0.18), rgba(20, 184, 166, 0.05));
+}
+
+.player-art span {
+  font-size: 13px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #a7f3c6;
+}
+
+.player-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.player-body h2 {
+  margin-bottom: 12px;
+}
+
+.player-note {
+  max-width: 56ch;
+  color: #a9b8b0;
+  line-height: 1.6;
+}
+
+.stream-url {
+  margin: 20px 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: #7e8f87;
+  overflow-wrap: anywhere;
+}
+
+button.button {
+  cursor: pointer;
+  font: inherit;
+}
+
 .label {
   margin-bottom: 2px;
   font-size: 11px;
@@ -215,6 +304,14 @@ footer {
   .hero {
     grid-template-columns: 1fr;
     align-items: start;
+  }
+
+  .player {
+    grid-template-columns: 1fr;
+  }
+
+  .player-art {
+    max-width: 220px;
   }
 
   .grid {

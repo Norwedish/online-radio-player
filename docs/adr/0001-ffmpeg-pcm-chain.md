@@ -106,14 +106,14 @@ Run the spike: `node scripts/spike-ffmpeg-chain.mjs data/fixtures/music.wav 20 h
 
 ### Measured
 
-| Metric | Tuned (`-analyzeduration 0 -probesize 32768`) | Untuned (FFmpeg defaults) |
-|---|---|---|
-| Encoder opens Icecast connection | **102 ms** | 3 761 ms |
-| Mount visible in `status-json.xsl` | **267–464 ms** | 3 814–4 037 ms |
-| Listener first byte after mount | **117–177 ms** (min 12 ms when data already buffered) | same order |
-| Delivered bitrate (`ffprobe` on capture) | **320 053–320 975 bps** (nominal 320 k) | same |
-| Capture length decoded from a 256 KB window | **6.57–6.60 s**, format `mp3` | same |
-| Independent decode of capture (`ffmpeg -i capture -f null -`) | **exit 0** | same |
+| Metric                                                        | Tuned (`-analyzeduration 0 -probesize 32768`)         | Untuned (FFmpeg defaults) |
+| ------------------------------------------------------------- | ----------------------------------------------------- | ------------------------- |
+| Encoder opens Icecast connection                              | **102 ms**                                            | 3 761 ms                  |
+| Mount visible in `status-json.xsl`                            | **267–464 ms**                                        | 3 814–4 037 ms            |
+| Listener first byte after mount                               | **117–177 ms** (min 12 ms when data already buffered) | same order                |
+| Delivered bitrate (`ffprobe` on capture)                      | **320 053–320 975 bps** (nominal 320 k)               | same                      |
+| Capture length decoded from a 256 KB window                   | **6.57–6.60 s**, format `mp3`                         | same                      |
+| Independent decode of capture (`ffmpeg -i capture -f null -`) | **exit 0**                                            | same                      |
 
 **Key finding:** with FFmpeg's default `analyzeduration` (5 s) / `probesize` (5 MB), an
 encoder reading a **real-time PCM pipe** spends **~3.7 s** probing before it even opens the
@@ -128,17 +128,17 @@ not a hard cost.
 on a 90 s file silently ends after 90 s — that is exactly what an earlier attempt did, so
 **always check `wallSeconds` ≈ `requestedSeconds`**).
 
-| Soak metric | Value |
-|---|---|
-| Wall clock | 600.2 s (`streamLoop: true`) |
-| Mount polls (every 5 s) | 118 |
-| **Mount missing** | **0** |
-| Startup / first byte | 372 ms / 111 ms |
-| Decoder CPU | 1.89 s (0.32 %) |
-| Mock ST CPU | 1.33 s (0.22 %) |
-| MP3 encoder CPU | 8.20 s (1.37 %) |
-| Combined | 11.42 s = **0.019 cores of 2 vCPU (≈ 1 %)** |
-| Exit codes | decoder 0, mock 0, encoder 0 |
+| Soak metric             | Value                                       |
+| ----------------------- | ------------------------------------------- |
+| Wall clock              | 600.2 s (`streamLoop: true`)                |
+| Mount polls (every 5 s) | 118                                         |
+| **Mount missing**       | **0**                                       |
+| Startup / first byte    | 372 ms / 111 ms                             |
+| Decoder CPU             | 1.89 s (0.32 %)                             |
+| Mock ST CPU             | 1.33 s (0.22 %)                             |
+| MP3 encoder CPU         | 8.20 s (1.37 %)                             |
+| Combined                | 11.42 s = **0.019 cores of 2 vCPU (≈ 1 %)** |
+| Exit codes              | decoder 0, mock 0, encoder 0                |
 
 ### CPU caveat (must re-measure on target)
 
@@ -149,7 +149,7 @@ Windows per-process CPU counters are unreliable because FFmpeg here is a **Scoop
 process. **Conclusion: CPU numbers must come from the Linux target** (Debian 13, 2 vCPU),
 where `utime`/`stime` from `-benchmark` and `time`/`top` are meaningful. Do not size the
 2-vCPU budget off anything measured here. The mock Stereo Tool measured 0.03–0.11 s CPU
-over 20 s wall (negligible), which only bounds the *Node* passthrough, not real ST.
+over 20 s wall (negligible), which only bounds the _Node_ passthrough, not real ST.
 
 ### Dev-host gotcha: FFmpeg exit codes are unreliable on Windows
 
@@ -163,3 +163,24 @@ exit code. On the Linux target, exit codes are reliable and this path is a no-op
 **Rule for the engine:** never treat an FFmpeg spawn as failed/succeeded by exit code
 alone on Windows dev hosts — probe the output. Keep that behaviour for the dev
 tooling; production playout runs only on Linux.
+
+### Second dev-host finding: always set `-content_type` on `icecast://` outputs
+
+FFmpeg's icecast muxer sniffs the **first 8 bytes** of the outgoing stream and only
+recognises Ogg (`OggS`), WebM and Opus (`OpusHead`) magic. MP3 (ID3 or `0xFF 0xFB` frame
+sync) therefore falls through to:
+
+```
+[icecast @ …] It seems you are streaming an unsupported format.
+[icecast @ …] It might work, but is not officially supported in Icecast!
+```
+
+The check is skipped entirely when `content_type` is set (`libavformat/icecast.c`,
+`icecast_write()`), so passing `-content_type audio/mpeg` silences it. Verified on this
+repo's dev Icecast 2.4.4 mount `/mobile.mp3`: without the flag the warning prints, with it
+the run is clean and `status-json.xsl` reports `server_type: audio/mpeg`, tone
+`mean_volume -24.1 dB / max_volume -21.0 dB` at 320 k.
+
+**Rule for the engine:** every mount passes its content type explicitly —
+MP3 `audio/mpeg`, Opus `audio/ogg`, AAC `audio/aac` — because FFmpeg's default is
+`audio/mpeg` and would otherwise mislabel the non-MP3 mounts.

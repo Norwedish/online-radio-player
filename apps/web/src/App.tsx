@@ -21,17 +21,18 @@ export function App() {
 
       <section className="hero">
         <div>
-          <h2>The station is not on air yet.</h2>
+          <h2>A test tone is on air.</h2>
           <p>
-            This is the M0 walking-skeleton shell. The playout engine, Stereo Tool chain and
-            Icecast mounts are wired up in the next milestones.
+            The M0 walking skeleton streams a 1 kHz tone through the mock Stereo Tool into Icecast.
+            The playout engine, real Stereo Tool chain and 24 hourly playlists arrive in the next
+            milestones.
           </p>
           <div className="actions">
-            <a className="button primary" href="/admin">
-              Admin panel
+            <a className="button primary" href="/listen">
+              Listen live
             </a>
-            <a className="button" href="/listen">
-              Listen page
+            <a className="button" href="/admin">
+              Admin panel
             </a>
           </div>
         </div>

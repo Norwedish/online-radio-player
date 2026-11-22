@@ -88,38 +88,38 @@ The system is **not AzuraCast**. It is a custom application that borrows AzuraCa
 
 These decisions come from the planning Q&A and are binding for execution.
 
-| Area | Decision | Notes |
-|---|---|---|
-| Deployment | Proxmox LXC / Debian 13, systemd | Small container: 2 vCPU / 4 GB / 100 GB SSD target |
-| Backend | Node.js + TypeScript | Fastify API, separate playout worker |
-| Playout engine | Custom Node/FFmpeg pipeline | No Liquidsoap, no AzuraCast |
-| Frontend | React + TS + Tailwind + shadcn/ui | Dark broadcast console |
-| Database | SQLite with WAL | Single-writer API; worker reads plans read-only |
-| Schedule source | Port playlist_maker generator to Node/TS | Keep `[PM]` naming and logic |
-| Library naming | Keep playlist_maker conventions | `00s`–`90s`, `General`, `Nieuws/` |
-| Hour boundary | Tolerant cut with logging; news may start slightly early | Tolerance default 45 s, configurable |
-| Transitions | Per-track fade/cue points | No crossfade in v1 |
-| Dead-air / failure | User-provided emergency loop file | Validated at startup |
-| Stereo Tool | Thimeo Stereo Tool 10, edition detected at install | Binary/preset/license paths configurable |
-| Stereo Tool chain | FFmpeg encodes after Stereo Tool | ST outputs PCM; FFmpeg makes the mounts |
-| Stereo Tool control | Single fixed preset | No UI preset switching in v1 |
-| Outputs | MP3 320k HQ, MP3 128k mobile, Opus 96k, AAC 96k, HLS | Icecast native HLS (2.5/2.6) |
-| Icecast version | Let the plan decide: **Icecast 2.5/2.6** | Native HLS; verify in M0 spike |
-| Server size | Small LXC (2 vCPU / 4 GB) | Encoder CPU must stay < 50% |
-| Timezone | Europe/Amsterdam | DST handled by Luxon; stored as UTC |
-| Media | Local path tree + NAS/SMB/NFS read paths | Full ingestion features in M2 |
-| Requests | Moderated queue + MusicBrainz lookup + library-only + auto-approve with blacklist | Dedications and profanity filter included |
-| Users | Local accounts, 3 roles, optional TOTP, email reset, audit trail | Admin / DJ / Operator |
-| Alerts | In-app, email, webhook, structured logs/syslog, Prometheus | All channels |
-| UI language | English, dark console; i18n-ready for later languages | Public page in English |
-| Stats | Listeners, played history, airplay analytics + CSV, DJ shift reports | |
-| Live studio | Single DJ, WebRTC/low-latency, browser-based | Target < 500 ms glass-to-air; fallback documented |
-| Live recordings | Keep 30 days | |
-| Public site | `/listen` public, `/admin` control panel | Same domain |
-| Public API | Read-only + request POST + API keys | OpenAPI documented |
-| Delivery | AI-executable micro-steps, MVP first | See §8 phase map |
-| Repo | GitHub private, license TBD (recommend MIT) | Do not redistribute Thimeo binaries |
-| Multi-station | Single station, future-proof schema | `station_id` on all relevant tables |
+| Area                | Decision                                                                          | Notes                                              |
+| ------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Deployment          | Proxmox LXC / Debian 13, systemd                                                  | Small container: 2 vCPU / 4 GB / 100 GB SSD target |
+| Backend             | Node.js + TypeScript                                                              | Fastify API, separate playout worker               |
+| Playout engine      | Custom Node/FFmpeg pipeline                                                       | No Liquidsoap, no AzuraCast                        |
+| Frontend            | React + TS + Tailwind + shadcn/ui                                                 | Dark broadcast console                             |
+| Database            | SQLite with WAL                                                                   | Single-writer API; worker reads plans read-only    |
+| Schedule source     | Port playlist_maker generator to Node/TS                                          | Keep `[PM]` naming and logic                       |
+| Library naming      | Keep playlist_maker conventions                                                   | `00s`–`90s`, `General`, `Nieuws/`                  |
+| Hour boundary       | Tolerant cut with logging; news may start slightly early                          | Tolerance default 45 s, configurable               |
+| Transitions         | Per-track fade/cue points                                                         | No crossfade in v1                                 |
+| Dead-air / failure  | User-provided emergency loop file                                                 | Validated at startup                               |
+| Stereo Tool         | Thimeo Stereo Tool 10, edition detected at install                                | Binary/preset/license paths configurable           |
+| Stereo Tool chain   | FFmpeg encodes after Stereo Tool                                                  | ST outputs PCM; FFmpeg makes the mounts            |
+| Stereo Tool control | Single fixed preset                                                               | No UI preset switching in v1                       |
+| Outputs             | MP3 320k HQ, MP3 128k mobile, Opus 96k, AAC 96k, HLS                              | Icecast native HLS (2.5/2.6)                       |
+| Icecast version     | Let the plan decide: **Icecast 2.5/2.6**                                          | Native HLS; verify in M0 spike                     |
+| Server size         | Small LXC (2 vCPU / 4 GB)                                                         | Encoder CPU must stay < 50%                        |
+| Timezone            | Europe/Amsterdam                                                                  | DST handled by Luxon; stored as UTC                |
+| Media               | Local path tree + NAS/SMB/NFS read paths                                          | Full ingestion features in M2                      |
+| Requests            | Moderated queue + MusicBrainz lookup + library-only + auto-approve with blacklist | Dedications and profanity filter included          |
+| Users               | Local accounts, 3 roles, optional TOTP, email reset, audit trail                  | Admin / DJ / Operator                              |
+| Alerts              | In-app, email, webhook, structured logs/syslog, Prometheus                        | All channels                                       |
+| UI language         | English, dark console; i18n-ready for later languages                             | Public page in English                             |
+| Stats               | Listeners, played history, airplay analytics + CSV, DJ shift reports              |                                                    |
+| Live studio         | Single DJ, WebRTC/low-latency, browser-based                                      | Target < 500 ms glass-to-air; fallback documented  |
+| Live recordings     | Keep 30 days                                                                      |                                                    |
+| Public site         | `/listen` public, `/admin` control panel                                          | Same domain                                        |
+| Public API          | Read-only + request POST + API keys                                               | OpenAPI documented                                 |
+| Delivery            | AI-executable micro-steps, MVP first                                              | See §8 phase map                                   |
+| Repo                | GitHub private, license TBD (recommend MIT)                                       | Do not redistribute Thimeo binaries                |
+| Multi-station       | Single station, future-proof schema                                               | `station_id` on all relevant tables                |
 
 ---
 
@@ -127,14 +127,14 @@ These decisions come from the planning Q&A and are binding for execution.
 
 ### 4.1 Process topology
 
-| Process | Responsibility | User |
-|---|---|---|
-| `radio-api` | Fastify REST + WebSocket, auth, RBAC, DB writer, static UI, public API, triggers | `radio` |
-| `radio-playout` | Audio clock, decks, mixer, scheduler, Stereo Tool link, encoder hub, live bus | `radio` |
-| `radio-icecast` | Icecast 2.5/2.6, mounts, HLS, stats | `icecast` (package default) |
-| `radio-stereotool` | Thimeo Stereo Tool 10 processing | `radio` |
-| `nginx` | TLS, reverse proxy, static assets, HLS cache | `www-data` |
-| `radio-backup.timer` | Daily SQLite backup + retention | `radio` |
+| Process              | Responsibility                                                                   | User                        |
+| -------------------- | -------------------------------------------------------------------------------- | --------------------------- |
+| `radio-api`          | Fastify REST + WebSocket, auth, RBAC, DB writer, static UI, public API, triggers | `radio`                     |
+| `radio-playout`      | Audio clock, decks, mixer, scheduler, Stereo Tool link, encoder hub, live bus    | `radio`                     |
+| `radio-icecast`      | Icecast 2.5/2.6, mounts, HLS, stats                                              | `icecast` (package default) |
+| `radio-stereotool`   | Thimeo Stereo Tool 10 processing                                                 | `radio`                     |
+| `nginx`              | TLS, reverse proxy, static assets, HLS cache                                     | `www-data`                  |
+| `radio-backup.timer` | Daily SQLite backup + retention                                                  | `radio`                     |
 
 ### 4.2 Data flow
 
@@ -368,13 +368,13 @@ online-radio-player/
 
 ### 6.2 Backend modules
 
-| Module | Responsibility |
-|---|---|
-| `packages/shared` | Zod schemas for config, API payloads, WS events, plan items, media |
-| `packages/db` | Drizzle schema, migrations, typed repositories, backup helpers |
-| `packages/core` | Pure domain logic: generator, separation, boundary rules, queue rules, loudness math |
-| `apps/api` | Fastify server, auth, RBAC, REST, WS, static serving, worker socket client, alerts, metrics |
-| `apps/playout` | Audio clock, decks, mixer, scheduler, Stereo Tool link, encoder hub, live bus, worker socket server |
+| Module            | Responsibility                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| `packages/shared` | Zod schemas for config, API payloads, WS events, plan items, media                                  |
+| `packages/db`     | Drizzle schema, migrations, typed repositories, backup helpers                                      |
+| `packages/core`   | Pure domain logic: generator, separation, boundary rules, queue rules, loudness math                |
+| `apps/api`        | Fastify server, auth, RBAC, REST, WS, static serving, worker socket client, alerts, metrics         |
+| `apps/playout`    | Audio clock, decks, mixer, scheduler, Stereo Tool link, encoder hub, live bus, worker socket server |
 
 ### 6.3 Database schema (SQLite)
 
@@ -803,81 +803,81 @@ Live session flow:
 
 All `/api/admin/*` endpoints require a session (or API key for triggers). All payloads validated with Zod. Errors use `{ error: { code, message, details } }`.
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/auth/login` | Login (username/email + password, optional TOTP) |
-| POST | `/api/auth/logout` | Revoke session |
-| GET | `/api/auth/me` | Current user |
-| POST | `/api/auth/password/forgot` | Request reset email |
-| POST | `/api/auth/password/reset` | Reset with token |
-| POST | `/api/auth/2fa/setup` | Start TOTP setup |
-| POST | `/api/auth/2fa/enable` | Confirm TOTP |
-| POST | `/api/auth/2fa/disable` | Disable TOTP |
-| GET/POST | `/api/admin/users` | List/create users |
-| PATCH/DELETE | `/api/admin/users/:id` | Update/deactivate |
-| GET/POST | `/api/admin/api-keys` | Manage API keys |
-| GET | `/api/media` | Search/filter media |
-| POST | `/api/media/import` | Start folder scan |
-| POST | `/api/media/upload` | Multipart upload |
-| GET/PATCH/DELETE | `/api/media/:id` | Get/edit/delete |
-| PATCH | `/api/media/:id/tags` | Edit tags |
-| GET | `/api/media/:id/artwork` | Artwork bytes |
-| POST | `/api/media/:id/analyze` | Re-run loudness |
-| GET | `/api/media/duplicates` | Duplicate groups |
-| GET/POST | `/api/playlists` | List/create |
-| PATCH/DELETE | `/api/playlists/:id` | Update/delete |
-| PUT | `/api/playlists/:id/items` | Replace items (ordered) |
-| POST | `/api/playlists/:id/items/reorder` | Reorder |
-| GET | `/api/schedule` | 24h grid + overrides |
-| PATCH | `/api/schedule/:hour` | Update override/lock/live |
-| POST | `/api/schedule/fallback-mode` | Toggle fallback mode |
-| POST | `/api/schedule/generate` | Generate plans |
-| GET | `/api/plans?date=YYYY-MM-DD` | Plans for a date |
-| GET | `/api/plans/:date/:hour` | One hour plan |
-| POST | `/api/plans/:date/:hour/regenerate` | Regenerate one hour |
-| GET | `/api/playout/state` | Full playout state |
-| POST | `/api/playout/skip` | Skip current |
-| POST | `/api/playout/pause` | Pause |
-| POST | `/api/playout/resume` | Resume |
-| POST | `/api/playout/stop` | Stop output |
-| POST | `/api/playout/seek` | Seek current |
-| GET | `/api/playout/queue` | Upcoming queue |
-| POST | `/api/playout/queue/move` | Reorder |
-| DELETE | `/api/playout/queue/:id` | Remove |
-| POST | `/api/playout/play-now` | Interrupt/play-now |
-| POST | `/api/playout/voice-over` | Play voice-over |
-| POST | `/api/playout/replay-last` | Replay last track |
-| PATCH | `/api/playout/fader` | Master fader |
-| POST | `/api/playout/emergency` | Trigger/clear emergency |
-| POST | `/api/live/start` | Start live session |
-| POST | `/api/live/stop` | Stop live session |
-| GET | `/api/live/status` | Live status |
-| GET | `/api/live/recordings` | List recordings |
-| GET/DELETE | `/api/live/recordings/:id` | Download/delete |
-| GET/POST | `/api/events` | Manage events |
-| GET | `/api/requests` | Moderation queue |
-| POST | `/api/requests/:id/approve` | Approve |
-| POST | `/api/requests/:id/reject` | Reject |
-| POST | `/api/requests/:id/play-next` | Insert play-next |
-| GET/POST | `/api/requests/blacklist` | Blacklist |
-| GET | `/api/alerts` | Alerts |
-| POST | `/api/alerts/:id/ack` | Acknowledge |
-| GET | `/api/stats/listeners` | Listener stats |
-| GET | `/api/stats/history` | Played history |
-| GET | `/api/stats/airplay` | Airplay analytics |
-| GET | `/api/stats/export` | CSV export |
-| GET/PATCH | `/api/settings` | Station settings |
-| GET/PATCH | `/api/settings/audio` | Audio settings |
-| GET/PATCH | `/api/settings/stereotool` | Stereo Tool settings |
-| GET/PATCH | `/api/settings/icecast` | Icecast settings |
-| GET | `/api/public/now-playing` | Public now-playing |
-| GET | `/api/public/schedule` | Public schedule |
-| GET | `/api/public/history` | Public history |
-| POST | `/api/public/requests` | Public request |
-| GET | `/api/public/stats` | Partner stats (API key) |
-| POST | `/api/triggers/:id` | Hardware/MIDI/Stream Deck trigger (API key) |
-| GET | `/api/health` | Liveness |
-| GET | `/api/ready` | Readiness |
+| Method           | Path                                | Purpose                                          |
+| ---------------- | ----------------------------------- | ------------------------------------------------ |
+| POST             | `/api/auth/login`                   | Login (username/email + password, optional TOTP) |
+| POST             | `/api/auth/logout`                  | Revoke session                                   |
+| GET              | `/api/auth/me`                      | Current user                                     |
+| POST             | `/api/auth/password/forgot`         | Request reset email                              |
+| POST             | `/api/auth/password/reset`          | Reset with token                                 |
+| POST             | `/api/auth/2fa/setup`               | Start TOTP setup                                 |
+| POST             | `/api/auth/2fa/enable`              | Confirm TOTP                                     |
+| POST             | `/api/auth/2fa/disable`             | Disable TOTP                                     |
+| GET/POST         | `/api/admin/users`                  | List/create users                                |
+| PATCH/DELETE     | `/api/admin/users/:id`              | Update/deactivate                                |
+| GET/POST         | `/api/admin/api-keys`               | Manage API keys                                  |
+| GET              | `/api/media`                        | Search/filter media                              |
+| POST             | `/api/media/import`                 | Start folder scan                                |
+| POST             | `/api/media/upload`                 | Multipart upload                                 |
+| GET/PATCH/DELETE | `/api/media/:id`                    | Get/edit/delete                                  |
+| PATCH            | `/api/media/:id/tags`               | Edit tags                                        |
+| GET              | `/api/media/:id/artwork`            | Artwork bytes                                    |
+| POST             | `/api/media/:id/analyze`            | Re-run loudness                                  |
+| GET              | `/api/media/duplicates`             | Duplicate groups                                 |
+| GET/POST         | `/api/playlists`                    | List/create                                      |
+| PATCH/DELETE     | `/api/playlists/:id`                | Update/delete                                    |
+| PUT              | `/api/playlists/:id/items`          | Replace items (ordered)                          |
+| POST             | `/api/playlists/:id/items/reorder`  | Reorder                                          |
+| GET              | `/api/schedule`                     | 24h grid + overrides                             |
+| PATCH            | `/api/schedule/:hour`               | Update override/lock/live                        |
+| POST             | `/api/schedule/fallback-mode`       | Toggle fallback mode                             |
+| POST             | `/api/schedule/generate`            | Generate plans                                   |
+| GET              | `/api/plans?date=YYYY-MM-DD`        | Plans for a date                                 |
+| GET              | `/api/plans/:date/:hour`            | One hour plan                                    |
+| POST             | `/api/plans/:date/:hour/regenerate` | Regenerate one hour                              |
+| GET              | `/api/playout/state`                | Full playout state                               |
+| POST             | `/api/playout/skip`                 | Skip current                                     |
+| POST             | `/api/playout/pause`                | Pause                                            |
+| POST             | `/api/playout/resume`               | Resume                                           |
+| POST             | `/api/playout/stop`                 | Stop output                                      |
+| POST             | `/api/playout/seek`                 | Seek current                                     |
+| GET              | `/api/playout/queue`                | Upcoming queue                                   |
+| POST             | `/api/playout/queue/move`           | Reorder                                          |
+| DELETE           | `/api/playout/queue/:id`            | Remove                                           |
+| POST             | `/api/playout/play-now`             | Interrupt/play-now                               |
+| POST             | `/api/playout/voice-over`           | Play voice-over                                  |
+| POST             | `/api/playout/replay-last`          | Replay last track                                |
+| PATCH            | `/api/playout/fader`                | Master fader                                     |
+| POST             | `/api/playout/emergency`            | Trigger/clear emergency                          |
+| POST             | `/api/live/start`                   | Start live session                               |
+| POST             | `/api/live/stop`                    | Stop live session                                |
+| GET              | `/api/live/status`                  | Live status                                      |
+| GET              | `/api/live/recordings`              | List recordings                                  |
+| GET/DELETE       | `/api/live/recordings/:id`          | Download/delete                                  |
+| GET/POST         | `/api/events`                       | Manage events                                    |
+| GET              | `/api/requests`                     | Moderation queue                                 |
+| POST             | `/api/requests/:id/approve`         | Approve                                          |
+| POST             | `/api/requests/:id/reject`          | Reject                                           |
+| POST             | `/api/requests/:id/play-next`       | Insert play-next                                 |
+| GET/POST         | `/api/requests/blacklist`           | Blacklist                                        |
+| GET              | `/api/alerts`                       | Alerts                                           |
+| POST             | `/api/alerts/:id/ack`               | Acknowledge                                      |
+| GET              | `/api/stats/listeners`              | Listener stats                                   |
+| GET              | `/api/stats/history`                | Played history                                   |
+| GET              | `/api/stats/airplay`                | Airplay analytics                                |
+| GET              | `/api/stats/export`                 | CSV export                                       |
+| GET/PATCH        | `/api/settings`                     | Station settings                                 |
+| GET/PATCH        | `/api/settings/audio`               | Audio settings                                   |
+| GET/PATCH        | `/api/settings/stereotool`          | Stereo Tool settings                             |
+| GET/PATCH        | `/api/settings/icecast`             | Icecast settings                                 |
+| GET              | `/api/public/now-playing`           | Public now-playing                               |
+| GET              | `/api/public/schedule`              | Public schedule                                  |
+| GET              | `/api/public/history`               | Public history                                   |
+| POST             | `/api/public/requests`              | Public request                                   |
+| GET              | `/api/public/stats`                 | Partner stats (API key)                          |
+| POST             | `/api/triggers/:id`                 | Hardware/MIDI/Stream Deck trigger (API key)      |
+| GET              | `/api/health`                       | Liveness                                         |
+| GET              | `/api/ready`                        | Readiness                                        |
 
 ### 6.8 WebSocket contract
 
@@ -1008,20 +1008,20 @@ Install order:
 
 ### 7.1 Mapping
 
-| playlist_maker (PHP/AzuraCast) | This project (TS/SQLite) |
-|---|---|
-| `StationPlaylist` `[PM] HH:00` | `playlists` row + `schedule_slots` hour |
-| `StationSchedule` (HHMM, days 1–7, loop_once) | `schedule_slots` (`hour`, `days_json`, `loop_once`) |
-| `StationPlaylistMedia` order | `plan_items` (position, media_id) |
-| `data/state.json` settings | `schedule_settings` / `settings` |
-| `data/state.json` template/overrides | `schedule_settings` keys `template.base`, `template.overrides` |
-| `data/state.json` generated plans | `hourly_plans` + `plan_items` + `snapshot_json` |
-| `data/state.json` runs | `generator_runs` (add table) or `audit_log` |
-| `news` media info | `media` rows + `news_paths` config |
-| Fallback mode service | `schedule_settings` `fallback_mode` + UI toggle |
-| `GenerateTask` every minute | internal cron/timer (23:00 + 00:05) |
-| `NewsReprocessTask` 5 min | internal timer |
-| `PlaylistIntegrityTask` 5 min | internal timer + alerts |
+| playlist_maker (PHP/AzuraCast)                | This project (TS/SQLite)                                       |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `StationPlaylist` `[PM] HH:00`                | `playlists` row + `schedule_slots` hour                        |
+| `StationSchedule` (HHMM, days 1–7, loop_once) | `schedule_slots` (`hour`, `days_json`, `loop_once`)            |
+| `StationPlaylistMedia` order                  | `plan_items` (position, media_id)                              |
+| `data/state.json` settings                    | `schedule_settings` / `settings`                               |
+| `data/state.json` template/overrides          | `schedule_settings` keys `template.base`, `template.overrides` |
+| `data/state.json` generated plans             | `hourly_plans` + `plan_items` + `snapshot_json`                |
+| `data/state.json` runs                        | `generator_runs` (add table) or `audit_log`                    |
+| `news` media info                             | `media` rows + `news_paths` config                             |
+| Fallback mode service                         | `schedule_settings` `fallback_mode` + UI toggle                |
+| `GenerateTask` every minute                   | internal cron/timer (23:00 + 00:05)                            |
+| `NewsReprocessTask` 5 min                     | internal timer                                                 |
+| `PlaylistIntegrityTask` 5 min                 | internal timer + alerts                                        |
 
 Add table:
 
@@ -1060,9 +1060,9 @@ Template blocks (minutes, half-open):
 
 ```json
 [
-  { "id": "news-00", "type": "news",  "start": 0,  "end": 3,  "locked": true },
-  { "id": "music-1", "type": "music", "start": 3,  "end": 30, "rotation": "default" },
-  { "id": "news-30", "type": "news",  "start": 30, "end": 33, "locked": true },
+  { "id": "news-00", "type": "news", "start": 0, "end": 3, "locked": true },
+  { "id": "music-1", "type": "music", "start": 3, "end": 30, "rotation": "default" },
+  { "id": "news-30", "type": "news", "start": 30, "end": 33, "locked": true },
   { "id": "music-2", "type": "music", "start": 33, "end": 60, "rotation": "default" }
 ]
 ```
@@ -1103,12 +1103,12 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
 
 ### Phase map (recommended delivery order)
 
-| Phase | Milestones | Shippable outcome |
-|---|---|---|
-| **Phase 0 — Walking skeleton** | M0, M1, M4 (partial), M5 (partial), M13.1–M13.4 | A tone/music file plays through Stereo Tool to Icecast; `/listen` plays it; installable on a clean LXC |
-| **Phase 1 — MVP** | M2, M3, M4 (complete), M5 (complete), M6, M9.1–M9.3, M11.1 | 24h automation, ST processing, 3 mounts + HLS, playout controls, public listen page |
-| **Phase 2 — Live & admin** | M7, M8, M9.4–M9.5, M10, M11.2–M11.5 | Live studio, schedule/media/request UI, public API, auth/audit |
-| **Phase 3 — Production hardening** | M12, M14, M15, M13.5–M13.7 | Alerts, metrics, backups, CI, staging, docs, launch |
+| Phase                              | Milestones                                                 | Shippable outcome                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Phase 0 — Walking skeleton**     | M0, M1, M4 (partial), M5 (partial), M13.1–M13.4            | A tone/music file plays through Stereo Tool to Icecast; `/listen` plays it; installable on a clean LXC |
+| **Phase 1 — MVP**                  | M2, M3, M4 (complete), M5 (complete), M6, M9.1–M9.3, M11.1 | 24h automation, ST processing, 3 mounts + HLS, playout controls, public listen page                    |
+| **Phase 2 — Live & admin**         | M7, M8, M9.4–M9.5, M10, M11.2–M11.5                        | Live studio, schedule/media/request UI, public API, auth/audit                                         |
+| **Phase 3 — Production hardening** | M12, M14, M15, M13.5–M13.7                                 | Alerts, metrics, backups, CI, staging, docs, launch                                                    |
 
 ---
 
@@ -1167,11 +1167,25 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
 - [ ] **M0.9 ADRs complete**
   - All ADRs have context, decision, consequences, and links.
   - **Verify:** `docs/adr/README.md` index exists; each ADR has a status.
-- [ ] **M0.10 Walking skeleton**
+- [x] **M0.10 Walking skeleton**
   - Minimal API `/api/health`, minimal worker that writes PCM to a mock ST, minimal web page that plays the stream.
   - **Verify:** `pnpm dev` → `/listen` plays tone; `curl /api/health` returns ok.
+  - **Result (2026-11-22):** passed end to end. `pnpm dev` starts API (3001), playout worker
+    and Vite (5173); `GET /api/health` → `{status: ok, boundaryToleranceSeconds: 45}`. The worker
+    streams `data/fixtures/tone.wav` → FFmpeg decode (48 kHz/16-bit/stereo) → mock Stereo Tool
+    → long-lived FFmpeg MP3 320k encoder → `icecast://…/hq.mp3`, using the ADR 0001 flags.
+    Chrome clicked "Play live" on `/listen` (audio element on the Vite-proxied
+    `/stream/hq.mp3`), `readyState` = have-metadata, `currentTime` advanced to 2.94 s, Stop
+    button paused it, zero console errors. Out-of-band decode of the raw mount: 320 kb/s,
+    48 kHz stereo, `mean_volume -24.1 dB / max_volume -21.0 dB`.
+  - **New finding applied here:** FFmpeg's `icecast://` muxer warns "It seems you are streaming
+    an unsupported format" for **MP3** too, because it only sniffs Ogg/WebM/Opus magic and
+    defaults `content_type` to `audio/mpeg` without setting it. Passing `-content_type audio/mpeg`
+    explicitly silences it (ADR 0001, "Second dev-host finding"); the engine must pass the
+    content type on every mount — MP3 `audio/mpeg`, Opus `audio/ogg`, AAC `audio/aac`.
 
 **M0 acceptance:**
+
 - All spikes have ADRs with reproducible commands and measurements.
 - A tone is audible through the real chain (with mock ST).
 - CI skeleton runs lint/typecheck/build.
@@ -1212,6 +1226,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test` green.
 
 **M1 acceptance:**
+
 - Fresh install creates a complete DB.
 - Config validation and backup/restore work.
 - Admin can log in.
@@ -1257,6 +1272,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test` green; coverage for media services > 80%.
 
 **M2 acceptance:**
+
 - Scan 1,000 files in < 60 s.
 - Upload + tag edit + artwork works.
 - Loudness values stored and used by playback.
@@ -1299,6 +1315,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test` green; golden plan diff documented.
 
 **M3 acceptance:**
+
 - 24 hours of plans generated for a full day.
 - Separation and overrun rules match playlist_maker.
 - On-air/past guards work.
@@ -1339,6 +1356,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test:integration` green.
 
 **M4 acceptance:**
+
 - Audio plays continuously with no gaps.
 - Skip/pause/resume/seek work from API.
 - Boundary rules pass all cases.
@@ -1373,6 +1391,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** kill Icecast → encoders reconnect when it returns; alerts fire.
 
 **M5 acceptance:**
+
 - HQ MP3, mobile MP3, Opus, AAC, HLS all playable.
 - Stereo Tool processing is active and observable.
 - Encoder/ST failures auto-recover or bypass with alerts.
@@ -1410,6 +1429,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test` green; OpenAPI validates.
 
 **M6 acceptance:**
+
 - All controls work via REST and WS.
 - Every control action is audited.
 - Requests and events integrate with the playout queue.
@@ -1450,6 +1470,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test` green.
 
 **M7 acceptance:**
+
 - Three roles enforced.
 - 2FA and password reset work.
 - Audit trail complete.
@@ -1489,6 +1510,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** `pnpm test:e2e` live flow green.
 
 **M8 acceptance:**
+
 - Single DJ can go live and be heard with low latency.
 - Music ducks and restores correctly.
 - Recording works and expires after 30 days.
@@ -1523,6 +1545,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** axe/Lighthouse a11y > 90; no console errors.
 
 **M9 acceptance:**
+
 - An operator can run a show entirely from the UI.
 - Controls are fast, safe, and recover from errors.
 - UI is accessible and responsive.
@@ -1558,6 +1581,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** E2E suite green.
 
 **M10 acceptance:**
+
 - All admin workflows are usable without the API.
 - Data persists across reloads.
 - E2E tests cover the main paths.
@@ -1591,6 +1615,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** examples run against staging.
 
 **M11 acceptance:**
+
 - Public page plays and looks good on mobile.
 - Requests work and are moderated.
 - Public API is documented and rate-limited.
@@ -1623,6 +1648,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** readiness fails when worker down; recovers when up.
 
 **M12 acceptance:**
+
 - Alerts reach all configured channels.
 - Metrics scrape cleanly.
 - Backup/restore works.
@@ -1661,6 +1687,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** script exits 0 on a fresh install.
 
 **M13 acceptance:**
+
 - Clean install in < 30 minutes.
 - Reboot survives.
 - Upgrade preserves data.
@@ -1694,6 +1721,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** p95 API < 200 ms; no errors at target listener count.
 
 **M14 acceptance:**
+
 - CI is green and required.
 - Staging deploy is one click.
 - Integration/E2E cover the critical flows.
@@ -1726,6 +1754,7 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - **Verify:** checklist signed off; smoke test passes.
 
 **M15 acceptance:**
+
 - Security/performance/docs complete.
 - Restore drill passes.
 - Launch checklist signed.
@@ -1799,15 +1828,15 @@ curl -s localhost:3001/api/ready | jq
 
 ### 10.2 Common incidents
 
-| Symptom | Check | Action |
-|---|---|---|
-| Dead air | `boundary_events`, mixer meters, encoder status | Check emergency mode; restore automation; check ST/encoder |
-| Stereo Tool down | `journalctl -u radio-stereotool` | Restart; if repeated, bypass + alert; validate license/preset |
-| Encoder down | `journalctl -u radio-playout` | Check Icecast; restart encoder; check password |
-| Icecast down | `systemctl status radio-icecast` | Restart; check config; check port |
-| Live no-show | Live schedule; alerts | Grace period; fallback playlist; alert DJ |
-| Listener drop | Icecast stats; nginx logs | Check mount; check bandwidth; restart encoder |
-| Disk full | `df -h` | Clean recordings/logs; expand disk; check backups |
+| Symptom          | Check                                           | Action                                                        |
+| ---------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| Dead air         | `boundary_events`, mixer meters, encoder status | Check emergency mode; restore automation; check ST/encoder    |
+| Stereo Tool down | `journalctl -u radio-stereotool`                | Restart; if repeated, bypass + alert; validate license/preset |
+| Encoder down     | `journalctl -u radio-playout`                   | Check Icecast; restart encoder; check password                |
+| Icecast down     | `systemctl status radio-icecast`                | Restart; check config; check port                             |
+| Live no-show     | Live schedule; alerts                           | Grace period; fallback playlist; alert DJ                     |
+| Listener drop    | Icecast stats; nginx logs                       | Check mount; check bandwidth; restart encoder                 |
+| Disk full        | `df -h`                                         | Clean recordings/logs; expand disk; check backups             |
 
 ### 10.3 Backup/restore
 
@@ -1834,22 +1863,22 @@ Rollback: restore DB backup, redeploy previous git tag, restart services.
 
 ## 11. Risk register
 
-| Risk | Impact | Likelihood | Mitigation |
-|---|---|---|---|
-| Thimeo CLI cannot stream PCM continuously | Blocks ST integration | Medium | M0.5 spike; FIFO/TCP/ALSA fallbacks; bypass mode |
-| Thimeo license/edition mismatch | ST won't start | Low | Detect at install; validate license; clear error |
-| LiveKit Node PCM API unavailable | Higher live latency | Medium | M0.7 spike; WebSocket Opus fallback; document trade-off |
-| FFmpeg per-track process overhead | CPU/glitches | Medium | 48 kHz, 64-sample mixing, 2 vCPU budget; benchmark; reuse decks |
-| SQLite write contention | Errors under load | Low | Single writer API; WAL; busy timeout; queue writes |
-| Icecast HLS version/config issues | HLS unavailable | Medium | Verify 2.5/2.6; FFmpeg HLS fallback |
-| LXC lacks ALSA/device access | Line-in unavailable | Medium | Core path uses pipes only; line-in optional; document passthrough |
-| DST/timezone bug | Wrong hour/news timing | Medium | Luxon; DST tests; store UTC; display station time |
-| News timing drift | Missed news | Medium | Boundary rules; tolerance; `boundary_events` logging; alerts |
-| Request spam/abuse | Moderation load | High | Rate limit, profanity filter, blacklist, cooldown, auto-approve off by default |
-| Scope creep | Delayed MVP | High | Phase map; MVP cut line; feature flags for non-MVP items |
-| Thimeo redistribution/licensing | Legal issue | Low | Do not ship binary/preset; NOTICE; user installs with license |
-| Secrets leakage | Security incident | Low | Secrets file 0600; no secrets in git; audit; CI secret scan |
-| 2 vCPU overload with 4 encoders + ST | Audio dropouts | Medium | Measure; reduce to 3 mounts if needed; HLS from same mount; CPU limits |
+| Risk                                      | Impact                 | Likelihood | Mitigation                                                                     |
+| ----------------------------------------- | ---------------------- | ---------- | ------------------------------------------------------------------------------ |
+| Thimeo CLI cannot stream PCM continuously | Blocks ST integration  | Medium     | M0.5 spike; FIFO/TCP/ALSA fallbacks; bypass mode                               |
+| Thimeo license/edition mismatch           | ST won't start         | Low        | Detect at install; validate license; clear error                               |
+| LiveKit Node PCM API unavailable          | Higher live latency    | Medium     | M0.7 spike; WebSocket Opus fallback; document trade-off                        |
+| FFmpeg per-track process overhead         | CPU/glitches           | Medium     | 48 kHz, 64-sample mixing, 2 vCPU budget; benchmark; reuse decks                |
+| SQLite write contention                   | Errors under load      | Low        | Single writer API; WAL; busy timeout; queue writes                             |
+| Icecast HLS version/config issues         | HLS unavailable        | Medium     | Verify 2.5/2.6; FFmpeg HLS fallback                                            |
+| LXC lacks ALSA/device access              | Line-in unavailable    | Medium     | Core path uses pipes only; line-in optional; document passthrough              |
+| DST/timezone bug                          | Wrong hour/news timing | Medium     | Luxon; DST tests; store UTC; display station time                              |
+| News timing drift                         | Missed news            | Medium     | Boundary rules; tolerance; `boundary_events` logging; alerts                   |
+| Request spam/abuse                        | Moderation load        | High       | Rate limit, profanity filter, blacklist, cooldown, auto-approve off by default |
+| Scope creep                               | Delayed MVP            | High       | Phase map; MVP cut line; feature flags for non-MVP items                       |
+| Thimeo redistribution/licensing           | Legal issue            | Low        | Do not ship binary/preset; NOTICE; user installs with license                  |
+| Secrets leakage                           | Security incident      | Low        | Secrets file 0600; no secrets in git; audit; CI secret scan                    |
+| 2 vCPU overload with 4 encoders + ST      | Audio dropouts         | Medium     | Measure; reduce to 3 mounts if needed; HLS from same mount; CPU limits         |
 
 ---
 
@@ -2225,26 +2254,31 @@ ffmpeg -v error -nostdin \
 
 Copy this for every task and store it in `PROGRESS.md` or an issue:
 
-```markdown
+````markdown
 ### M4.2 — Deck
 
 **Goal:** One sentence.
 **Depends:** M4.1.
 **Files to create/modify:**
+
 - `apps/playout/src/audio/deck.ts`
 - `apps/playout/src/audio/deck.test.ts`
 
 **Steps:**
+
 1. ...
 2. ...
 3. ...
 
 **Verify:**
+
 ```bash
 pnpm --filter @radio/playout test deck
 ```
+````
 
 **Definition of done:**
+
 - [ ] Code implemented
 - [ ] Unit tests pass
 - [ ] No type/lint errors
@@ -2253,6 +2287,7 @@ pnpm --filter @radio/playout test deck
 - [ ] `PROGRESS.md` updated
 
 **Rollback:** revert the commit; no DB migration or restore the previous migration.
+
 ```
 
 ### Global definition of done
@@ -2291,3 +2326,4 @@ Everything else (live studio, requests, stats, alerts, full admin UI) is Phase 2
 ---
 
 *End of plan.*
+```

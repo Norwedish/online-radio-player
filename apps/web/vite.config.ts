@@ -9,6 +9,12 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api": "http://127.0.0.1:3001",
+      // Same-origin audio path for the dev listener page -> Icecast.
+      "/stream": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/stream/, ""),
+      },
     },
   },
   build: {

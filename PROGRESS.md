@@ -8,24 +8,24 @@
 
 ## Milestone status
 
-| Milestone | Status | Notes |
-|---|---|---|
-| M0 — Foundations & spikes | 🟡 In progress | Workspace scaffolded; spikes pending |
-| M1 — Data model & config | ⬜ Not started | |
-| M2 — Media library | ⬜ Not started | |
-| M3 — 24×1h generator port | ⬜ Not started | |
-| M4 — Playout core | ⬜ Not started | |
-| M5 — Stereo Tool / encoders / Icecast | ⬜ Not started | |
-| M6 — Interactive control API | ⬜ Not started | |
-| M7 — Auth / RBAC / audit | ⬜ Not started | |
-| M8 — Live studio | ⬜ Not started | |
-| M9 — Admin UI & playout console | ⬜ Not started | |
-| M10 — Schedule / media / requests UI | ⬜ Not started | |
-| M11 — Public site & API | ⬜ Not started | |
-| M12 — Alerts / metrics / backups | ⬜ Not started | |
-| M13 — Deployment automation | ⬜ Not started | |
-| M14 — Testing / CI / staging | ⬜ Not started | |
-| M15 — Hardening / docs / launch | ⬜ Not started | |
+| Milestone                             | Status         | Notes                                |
+| ------------------------------------- | -------------- | ------------------------------------ |
+| M0 — Foundations & spikes             | 🟡 In progress | Workspace scaffolded; spikes pending |
+| M1 — Data model & config              | ⬜ Not started |                                      |
+| M2 — Media library                    | ⬜ Not started |                                      |
+| M3 — 24×1h generator port             | ⬜ Not started |                                      |
+| M4 — Playout core                     | ⬜ Not started |                                      |
+| M5 — Stereo Tool / encoders / Icecast | ⬜ Not started |                                      |
+| M6 — Interactive control API          | ⬜ Not started |                                      |
+| M7 — Auth / RBAC / audit              | ⬜ Not started |                                      |
+| M8 — Live studio                      | ⬜ Not started |                                      |
+| M9 — Admin UI & playout console       | ⬜ Not started |                                      |
+| M10 — Schedule / media / requests UI  | ⬜ Not started |                                      |
+| M11 — Public site & API               | ⬜ Not started |                                      |
+| M12 — Alerts / metrics / backups      | ⬜ Not started |                                      |
+| M13 — Deployment automation           | ⬜ Not started |                                      |
+| M14 — Testing / CI / staging          | ⬜ Not started |                                      |
+| M15 — Hardening / docs / launch       | ⬜ Not started |                                      |
 
 ## M0 — Foundations and technical spikes
 
@@ -38,13 +38,21 @@
 - [x] **M0.7 Spike: live transport** - browser studio = **WebSocket PCM** (ADR 0004, **Accepted**): 936 frames/20 s, avg arrival 0.89 ms, p95 1.7 ms, jitter 2.03 ms, 0 sequence gaps, 772.9 kbps mono; external DJs = **Icecast `/live` ingest** (15/15 marker bursts, median 47 ms source->listener). LiveKit deferred (extra SFU on 2 vCPU); documented as the upgrade path.
 - [x] **M0.8 Spike: SQLite concurrency** - WAL verified (ADR 0005, **Accepted**): 1500 inserts at 50/s with 0 `SQLITE_BUSY` retries across 1 writer + 2 readonly readers, `db.backup()` ok mid-load, WAL ~4.1 MB.
 - [ ] **M0.9 ADRs complete** — record context/decision/consequences for each spike.
-- [ ] **M0.10 Walking skeleton** — `/api/health`, worker heartbeat, `/listen` placeholder plays a tone.
+- [x] **M0.10 Walking skeleton** — `pnpm dev` runs API (3001) + playout worker + Vite (5173);
+      worker streams tone → mock ST → MP3 320k → Icecast `/hq.mp3` with the ADR 0001 flags;
+      `/api/health` returns `status ok`; Chrome opens `/listen`, clicks Play live → `readyState
+  have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; audio verified
+      out-of-band (`mean_volume -24.1 dB / max_volume -21.0 dB`, 48 kHz stereo, 320 kb/s).
+      Second finding applied here: FFmpeg's icecast muxer warns "unsupported format" for MP3
+      unless `-content_type audio/mpeg` is set — fixed in `apps/playout/src/skeleton.ts`.
 
 ### M0 acceptance
 
 - [ ] All spikes have ADRs with reproducible commands and measurements.
-- [ ] A tone is audible through the real chain (with mock Stereo Tool).
-- [ ] CI skeleton runs lint, typecheck, test and build.
+- [x] A tone is audible through the real chain (with mock Stereo Tool). — M0.10: Chrome played
+      `/listen` off the Icecast mount; out-of-band decode confirmed the tone.
+- [x] CI skeleton runs lint, typecheck, test and build. — `.github/workflows/ci.yml` covers all
+      four; verified locally on this host (M0.10 also ran `pnpm build` clean).
 
 ## M1 — Data model, configuration, persistence
 
@@ -213,27 +221,30 @@
 
 ## Verification log
 
-| Date | Command | Result | Notes |
-|---|---|---|---|
-| 2026-11-21 | `pnpm install` | ✅ | Dependencies installed |
-| 2026-11-21 | `pnpm lint` | ✅ | ESLint clean |
-| 2026-11-21 | `pnpm typecheck` | ✅ | All projects typecheck |
-| 2026-11-21 | `pnpm test` | ✅ | 7 tests pass (3 files) |
-| 2026-11-21 | `pnpm build` | ✅ | API/playout/web built |
-| 2026-11-21 | `pnpm config:validate` | ✅ | Example config valid |
-| 2026-11-21 | runtime smoke | ✅ | API `/api/health` returns ok; worker starts and heartbeats |
-| 2026-11-21 | `pnpm dev` smoke | ✅ | API health ok; Vite serves `/` with HTTP 200; worker heartbeat |
-| 2026-11-21 | `docker compose up` (dev Icecast) | ✅ | Icecast 2.4.4, `status-json.xsl` responds, mounts `/hq.mp3` `/mobile.mp3` `/opus.ogg` `/aac.aac` |
-| 2026-11-21 | `node scripts/spike-ffmpeg-chain.mjs` (20 s, `/hq.mp3`) | ✅ | open 102 ms · mount 464 ms · first byte 117 ms · 320 053 bps · capture decodes exit 0 |
-| 2026-11-21 | same chain, FFmpeg default probing (untuned) | ⚠️ | mount 3.8–4.0 s: encoder spends 3.76 s analyzing a real-time PCM pipe → fixed by `-analyzeduration 0 -probesize 32768` |
-| 2026-11-21 | `node scripts/make-fixtures.mjs -f` | ✅ | `tone.wav` 60 s / `music.wav` 90 s, both `pcm_s16le` 48 000 Hz 2 ch |
-| 2026-11-22 | `node scripts/spike-ffmpeg-chain.mjs data/fixtures/music.wav 600 hq.mp3` | ✅ | 10-minute soak: 118 mount polls, 0 missing, 11.42 s CPU total (0.019 cores), all stages exit 0 (`data/fixtures/spike-soak-600.json`) |
-| 2026-11-22 | `pnpm spike:sqlite 30 50` | ✅ | journal_mode `wal`; 1500 inserts @ 50/s; 0 busy retries (writer + 2 readers); avg write 0.111 ms; backup mid-load ok; readers readonly, max read 1 ms; WAL 4.13 MB (`data/spike/sqlite/spike-result.json`) |
-| 2026-11-22 | Icecast HLS capability check | ℹ️ | dev container is Icecast 2.4.4; upstream 2.5.0 release notes, latest config docs and the 2.6 milestone contain **no HLS** |
-| 2026-11-22 | `pnpm spike:hls data/fixtures/music.wav 30` | ✅ | playlist at 1.55 s; 2.005 s AAC segments; 6-segment live window; nginx 200 `application/vnd.apple.mpegurl` (no-store) and `video/mp2t` (max-age=60) (`data/spike/hls/spike-result.json`) |
-| 2026-11-22 | Chrome + hls.js live HLS playback | ✅ | latency 2.1 s (`liveSyncDurationCount: 1`), 4.1 s (2), 8-14 s (default 3); no console errors |
-| 2026-11-22 | `pnpm spike:live-ws 20` (Chrome uplink) | ✅ | 936 frames; arrival avg 0.89 ms, p95 1.7 ms; jitter 2.03 ms; 0 sequence gaps; 772.9 kbps mono; 0.124 s server CPU |
-| 2026-11-22 | `pnpm spike:live-icecast 30` | ✅ | 15/15 marker bursts matched; source->listener avg 76.9 ms, p50 47 ms, p95 124 ms; startup burst 672 ms |
+| Date       | Command                                                                  | Result | Notes                                                                                                                                                                                                        |
+| ---------- | ------------------------------------------------------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-11-21 | `pnpm install`                                                           | ✅     | Dependencies installed                                                                                                                                                                                       |
+| 2026-11-21 | `pnpm lint`                                                              | ✅     | ESLint clean                                                                                                                                                                                                 |
+| 2026-11-21 | `pnpm typecheck`                                                         | ✅     | All projects typecheck                                                                                                                                                                                       |
+| 2026-11-21 | `pnpm test`                                                              | ✅     | 7 tests pass (3 files)                                                                                                                                                                                       |
+| 2026-11-21 | `pnpm build`                                                             | ✅     | API/playout/web built                                                                                                                                                                                        |
+| 2026-11-21 | `pnpm config:validate`                                                   | ✅     | Example config valid                                                                                                                                                                                         |
+| 2026-11-21 | runtime smoke                                                            | ✅     | API `/api/health` returns ok; worker starts and heartbeats                                                                                                                                                   |
+| 2026-11-21 | `pnpm dev` smoke                                                         | ✅     | API health ok; Vite serves `/` with HTTP 200; worker heartbeat                                                                                                                                               |
+| 2026-11-21 | `docker compose up` (dev Icecast)                                        | ✅     | Icecast 2.4.4, `status-json.xsl` responds, mounts `/hq.mp3` `/mobile.mp3` `/opus.ogg` `/aac.aac`                                                                                                             |
+| 2026-11-21 | `node scripts/spike-ffmpeg-chain.mjs` (20 s, `/hq.mp3`)                  | ✅     | open 102 ms · mount 464 ms · first byte 117 ms · 320 053 bps · capture decodes exit 0                                                                                                                        |
+| 2026-11-21 | same chain, FFmpeg default probing (untuned)                             | ⚠️     | mount 3.8–4.0 s: encoder spends 3.76 s analyzing a real-time PCM pipe → fixed by `-analyzeduration 0 -probesize 32768`                                                                                       |
+| 2026-11-21 | `node scripts/make-fixtures.mjs -f`                                      | ✅     | `tone.wav` 60 s / `music.wav` 90 s, both `pcm_s16le` 48 000 Hz 2 ch                                                                                                                                          |
+| 2026-11-22 | `node scripts/spike-ffmpeg-chain.mjs data/fixtures/music.wav 600 hq.mp3` | ✅     | 10-minute soak: 118 mount polls, 0 missing, 11.42 s CPU total (0.019 cores), all stages exit 0 (`data/fixtures/spike-soak-600.json`)                                                                         |
+| 2026-11-22 | `pnpm spike:sqlite 30 50`                                                | ✅     | journal_mode `wal`; 1500 inserts @ 50/s; 0 busy retries (writer + 2 readers); avg write 0.111 ms; backup mid-load ok; readers readonly, max read 1 ms; WAL 4.13 MB (`data/spike/sqlite/spike-result.json`)   |
+| 2026-11-22 | Icecast HLS capability check                                             | ℹ️     | dev container is Icecast 2.4.4; upstream 2.5.0 release notes, latest config docs and the 2.6 milestone contain **no HLS**                                                                                    |
+| 2026-11-22 | `pnpm spike:hls data/fixtures/music.wav 30`                              | ✅     | playlist at 1.55 s; 2.005 s AAC segments; 6-segment live window; nginx 200 `application/vnd.apple.mpegurl` (no-store) and `video/mp2t` (max-age=60) (`data/spike/hls/spike-result.json`)                     |
+| 2026-11-22 | Chrome + hls.js live HLS playback                                        | ✅     | latency 2.1 s (`liveSyncDurationCount: 1`), 4.1 s (2), 8-14 s (default 3); no console errors                                                                                                                 |
+| 2026-11-22 | `pnpm spike:live-ws 20` (Chrome uplink)                                  | ✅     | 936 frames; arrival avg 0.89 ms, p95 1.7 ms; jitter 2.03 ms; 0 sequence gaps; 772.9 kbps mono; 0.124 s server CPU                                                                                            |
+| 2026-11-22 | `pnpm spike:live-icecast 30`                                             | ✅     | 15/15 marker bursts matched; source->listener avg 76.9 ms, p50 47 ms, p95 124 ms; startup burst 672 ms                                                                                                       |
+| 2026-11-22 | FFmpeg icecast `-content_type` check (`/mobile.mp3`)                     | ✅     | without the flag FFmpeg warns "unsupported format" for MP3 (sniffs Ogg/WebM/Opus magic only); with `-content_type audio/mpeg` run is clean and `status-json.xsl` says `audio/mpeg`                           |
+| 2026-11-22 | `pnpm dev` walking skeleton                                              | ✅     | API health `{status: ok, boundaryToleranceSeconds: 45}`; worker logged tone → mock ST → `/hq.mp3`; no "unsupported format" warning; mount decoded 3 s: 320 kb/s, 48 kHz stereo, mean -24.1 dB / max -21.0 dB |
+| 2026-11-22 | Chrome `/listen` playback + Stop                                         | ✅     | click "Play live" → `readyState` have-metadata, `currentTime` 2.94 s, `currentSrc /stream/hq.mp3`; click Stop → badge "Paused"; zero console errors                                                          |
 
 ## Blockers / open decisions
 
@@ -247,6 +258,9 @@
 
 ## Next up
 
-1. **M0.5** — Thimeo Stereo Tool CLI spike; **blocked** until the licensed binary/preset is on a Linux host.
-2. **M0.9** — finish the ADR set (0002 after M0.5; re-measure CPU on the Debian 13 target; Firefox/Safari HLS smoke test).
-3. **M0.10** — walking skeleton: `/listen` plays the tone end to end.
+1. **M0.5** — Thimeo Stereo Tool CLI spike; **blocked** until the licensed binary/preset/`.lic`
+   is available on a Linux host. Blocks ADR 0002 and the last M0 acceptance row.
+2. **M0.9** — remaining ADR work: 0002 after M0.5; re-measure CPU on the Debian 13 target
+   (ADRs 0001/0003/0004 are Windows-host numbers); Firefox/Safari HLS smoke test on staging.
+3. **M1** — data model, configuration schema and persistence (`packages/shared` config +
+   `packages/db`), using the accepted SQLite decision from ADR 0005.
