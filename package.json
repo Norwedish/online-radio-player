@@ -35,7 +35,8 @@
     "media:scan": "tsx scripts/cli.ts media:scan",
     "generate": "tsx scripts/cli.ts generate",
     "preview": "tsx scripts/cli.ts preview",
-    "retention": "tsx scripts/cli.ts retention"
+    "retention": "tsx scripts/cli.ts retention",
+    "bench:media": "tsx scripts/bench-media.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

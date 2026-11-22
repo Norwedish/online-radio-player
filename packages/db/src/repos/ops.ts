@@ -905,9 +905,7 @@ export class BackupRepository {
     );
   }
 
-  list(
-    limit = 100,
-  ): {
+  list(limit = 100): {
     id: number;
     path: string;
     type: string;

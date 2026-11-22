@@ -247,9 +247,7 @@ export class ScheduleRepository {
   }
 
   /** Recently planned media (for separation seeding): plan items with absolute start times. */
-  plannedSince(
-    fromDate: string,
-  ): {
+  plannedSince(fromDate: string): {
     media_id: number;
     artist: string | null;
     plan_date: string;
@@ -344,12 +342,12 @@ export class ScheduleRepository {
 
   /* ── generator_runs ──────────────────────────────────────────────────── */
 
-  startRun(runType: string, mode: string, hours: unknown): number {
+  startRun(runType: string, mode: string, hours: unknown, startedAt = nowIso()): number {
     const info = this.db
       .prepare(
         "INSERT INTO generator_runs (station_id, run_type, started_at, mode, hours_json, status) VALUES (?, ?, ?, ?, ?, 'running')",
       )
-      .run(this.stationId, runType, nowIso(), mode, toJson(hours));
+      .run(this.stationId, runType, startedAt, mode, toJson(hours));
     return Number(info.lastInsertRowid);
   }
 
@@ -366,9 +364,7 @@ export class ScheduleRepository {
       .run(nowIso(), status, toJson(warnings), error ?? null, id);
   }
 
-  runs(
-    limit = 50,
-  ): {
+  runs(limit = 50): {
     id: number;
     run_type: string;
     started_at: string;

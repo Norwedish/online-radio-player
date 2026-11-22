@@ -404,9 +404,7 @@ export class MediaRepository {
     return Number(info.lastInsertRowid);
   }
 
-  listSuggestions(
-    status = "pending",
-  ): {
+  listSuggestions(status = "pending"): {
     id: number;
     media_id: number;
     source: string;
