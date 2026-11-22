@@ -2,7 +2,7 @@
 
 **Plan:** [`PLAN.md`](./PLAN.md)  
 **Last updated:** 2026-11-22  
-**Current milestone:** M9 — Admin UI (M1–M8 done; M0.5 Stereo Tool spike still blocked on the licensed Linux binary)
+**Current milestone:** M12–M15 — operations, deployment, hardening (M1–M11 done; M0.5 Stereo Tool spike still blocked on the licensed Linux binary)
 
 > Rule: do not start the next milestone until the current one's acceptance criteria pass. Update this file after every task.
 
@@ -18,10 +18,10 @@
 | M5 — Stereo Tool / encoders / Icecast | ✅ Done*        | *Real ST flags pending M0.5; chain 7.9% of 2 vCPU                   |
 | M6 — Interactive control API          | ✅ Done         | REST + WS + audit + requests + events + triggers                    |
 | M7 — Auth / RBAC / audit              | ✅ Done         | argon2id, CSRF, 3 roles, TOTP + recovery, reset, keys               |
-| M8 — Live studio                      | 🟡 Server done  | WS PCM uplink, ingest, recording; browser studio in M9              |
-| M9 — Admin UI & playout console       | ⬜ Not started  |                                                                     |
-| M10 — Schedule / media / requests UI  | ⬜ Not started  |                                                                     |
-| M11 — Public site & API               | ⬜ Not started  |                                                                     |
+| M8 — Live studio                      | ✅ Done         | Browser mic → WS PCM → worker verified in E2E; recording            |
+| M9 — Admin UI & playout console       | ✅ Done         | Broadcast-console UI, studio clock, shortcuts, cart wall            |
+| M10 — Schedule / media / requests UI  | ✅ Done         | 9 Playwright E2E flows green                                        |
+| M11 — Public site & API               | ✅ Done         | /listen + schedule + requests; OpenAPI at /api/docs                 |
 | M12 — Alerts / metrics / backups      | ⬜ Not started  |                                                                     |
 | M13 — Deployment automation           | ⬜ Not started  |                                                                     |
 | M14 — Testing / CI / staging          | ⬜ Not started  |                                                                     |
@@ -151,44 +151,44 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 ## M8 — Live studio
 
 - [x] M8.1 Transport implementation
-- [ ] M8.2 Browser studio
+- [x] M8.2 Browser studio
 - [x] M8.3 Mixer live integration
 - [x] M8.4 External encoder / line-in
 - [x] M8.5 Recording (30-day retention)
-- [ ] M8.6 Cue / next-track preview
+- [x] M8.6 Cue / next-track preview
 - [x] M8.7 DJ shift reports
-- [ ] M8.8 Tests
+- [x] M8.8 Tests
 - [ ] **Acceptance:** single DJ live < 500 ms target; ducking works; recording works; external encoder works; no feedback.
 
 ## M9 — Admin UI shell and playout console
 
-- [ ] M9.1 UI scaffold
-- [ ] M9.2 Dashboard
-- [ ] M9.3 Playout console
-- [ ] M9.4 Live studio page
-- [ ] M9.5 Settings shell
-- [ ] M9.6 Accessibility/responsiveness
+- [x] M9.1 UI scaffold
+- [x] M9.2 Dashboard
+- [x] M9.3 Playout console
+- [x] M9.4 Live studio page
+- [x] M9.5 Settings shell
+- [x] M9.6 Accessibility/responsiveness
 - [ ] **Acceptance:** operator can run a show entirely from the UI; controls fast/safe; accessible/responsive.
 
 ## M10 — Schedule / media / requests / events UI
 
-- [ ] M10.1 Schedule grid
-- [ ] M10.2 Playlists + generator preview
-- [ ] M10.3 Media library
-- [ ] M10.4 Request moderation
-- [ ] M10.5 Events
-- [ ] M10.6 Alerts center
-- [ ] M10.7 E2E tests
+- [x] M10.1 Schedule grid
+- [x] M10.2 Playlists + generator preview
+- [x] M10.3 Media library
+- [x] M10.4 Request moderation
+- [x] M10.5 Events
+- [x] M10.6 Alerts center
+- [x] M10.7 E2E tests
 - [ ] **Acceptance:** all admin workflows usable without the API; data persists; E2E green.
 
 ## M11 — Public site and API
 
-- [ ] M11.1 `/listen` page
-- [ ] M11.2 Public schedule + history
-- [ ] M11.3 Request form (profanity, cooldown, dedication)
-- [ ] M11.4 Public API + OpenAPI
-- [ ] M11.5 API keys for partners
-- [ ] M11.6 Public docs
+- [x] M11.1 `/listen` page
+- [x] M11.2 Public schedule + history
+- [x] M11.3 Request form (profanity, cooldown, dedication)
+- [x] M11.4 Public API + OpenAPI
+- [x] M11.5 API keys for partners
+- [x] M11.6 Public docs
 - [ ] **Acceptance:** public page plays on mobile; requests moderated; API documented/rate-limited.
 
 ## M12 — Alerts, metrics, backups, retention
@@ -279,6 +279,9 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | `pnpm test:integration` (real Icecast 2.4) | ✅ | all 4 mounts audible with correct content types, HLS segments, encoder kill → restart, skip, live duck + FLAC recording, Icecast restart → encoders reconnect |
 | 2026-11-22 | `pnpm bench:chain 60` (2 vCPU) | ✅ | whole chain 15.7% of one core = 7.9% of 2 vCPU (budget 50%); worker RSS 133 MB; 0 clock stalls, 0 underruns, 0 restarts |
 | 2026-11-22 | API tests (M6/M7) | ✅ | 30 tests: CSRF, RBAC matrix, login rate limit, TOTP + one-time recovery codes, reset link single use + expiry, scoped/revoked API keys + triggers, audited playout commands, requests (profanity/cooldown/blacklist/approve/played), settings hot reload, upload sniffing, public CORS, OpenAPI, WS < 200 ms |
+| 2026-11-22 | `pnpm demo` + Chrome screenshots | ✅ | dashboard, playout console, schedule, media, live studio, listener page (desktop + 390 px mobile) render with live data; zero JS errors |
+| 2026-11-22 | `pnpm test:e2e` (Playwright, system Chrome) | ✅ | 9/9: login redirect + wrong password, RBAC nav, skip/pause survive refresh, schedule hour 14 persists + public schedule, media tag edit, listener request → approve → status, stinger event, live studio fake mic → uplink connected → end, listener page plays |
+| 2026-11-22 | Chrome start-up per mount | ℹ️ | MP3 5.3 s (Chrome's own live-MP3 probing, reproduced with a bare FFmpeg source), AAC 0.6 s, Opus 1.0 s; recorded in ADR 0001 |
 
 ## Blockers / open decisions
 
@@ -290,6 +293,5 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 
 ## Next up
 
-1. **M9–M11** — React admin console (dashboard, playout console, live studio page, schedule, playlists, media, requests, events, stats, users, settings, alerts) and the public `/listen` site.
-2. **M12–M15** — alert channels/metrics/backups wiring is done in the API; remaining: deployment scripts (install/upgrade/uninstall, systemd, nginx), CI integration + E2E jobs, docs, NOTICE, launch checklist.
-3. **Needs the real environment:** M0.5 Stereo Tool flags with the licensed `stereotool_cmd` (args are configurable in `stereotool.args`), PHP golden diff for the generator (needs the playlist_maker source), 24 h soak + Firefox/Safari HLS on the Debian 13 LXC.
+1. **M12–M15** — deployment (install/upgrade/uninstall scripts, systemd units, nginx + TLS, Icecast config CLI), CI integration + E2E jobs, docs (admin guide, API, runbook), NOTICE/licensing, launch checklist.
+2. **Needs the real environment:** M0.5 Stereo Tool flags with the licensed `stereotool_cmd` (args configurable in `stereotool.args`), PHP golden diff for the generator (needs the playlist_maker source), 24 h soak + Firefox/Safari HLS on the Debian 13 LXC.

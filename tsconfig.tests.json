@@ -12,7 +12,8 @@
       "@radio/shared": ["./packages/shared/src/index.ts"],
       "@radio/core": ["./packages/core/src/index.ts"],
       "@radio/db": ["./packages/db/src/index.ts"]
-    }
+    },
+    "lib": ["ES2023", "DOM"]
   },
   "include": [
     "packages/*/src/**/*.ts",

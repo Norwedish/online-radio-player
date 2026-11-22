@@ -38,10 +38,13 @@
     "retention": "tsx scripts/cli.ts retention",
     "bench:media": "tsx scripts/bench-media.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "bench:chain": "tsx scripts/bench-chain.ts"
+    "bench:chain": "tsx scripts/bench-chain.ts",
+    "demo": "tsx scripts/demo-stack.ts",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": ">=22",
     "eslint": "^9.0.0",
     "globals": "^16.0.0",

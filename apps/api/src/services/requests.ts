@@ -246,9 +246,7 @@ export class RequestService {
   }
 
   /** Public status (no PII). */
-  publicStatus(
-    id: number,
-  ): {
+  publicStatus(id: number): {
     id: number;
     status: string;
     artist: string | null;

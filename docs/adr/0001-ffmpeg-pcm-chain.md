@@ -184,3 +184,22 @@ the run is clean and `status-json.xsl` reports `server_type: audio/mpeg`, tone
 **Rule for the engine:** every mount passes its content type explicitly —
 MP3 `audio/mpeg`, Opus `audio/ogg`, AAC `audio/aac` — because FFmpeg's default is
 `audio/mpeg` and would otherwise mislabel the non-MP3 mounts.
+
+## Third finding (2026-11-22, M11): browser start-up time per codec
+
+Measured in Chrome (Linux) against the live chain (`pnpm demo`), time from `audio.play()` to
+the first `timeupdate`:
+
+| Mount                 | Start-up |
+| --------------------- | -------- |
+| `/hq.mp3` (320k)      | 5.3 s    |
+| `/mobile.mp3` (128k)  | 4.7 s    |
+| `/aac.aac` (96k ADTS) | 0.6 s    |
+| `/opus.ogg` (96k)     | 1.0 s    |
+
+The MP3 delay is Chrome's own probing of a headerless live MP3 stream: it is identical with a
+bare `ffmpeg -f lavfi … -f mp3 icecast://` source, with `-write_xing 0 -id3v2_version 0`, at
+128k, and with or without the nginx/API proxy. It is not caused by Icecast burst size or by
+this chain. The listener page therefore keeps the station's `primary` mount as the default
+(stations that care about instant start can mark the AAC mount primary) and shows a
+"connecting" state while the browser buffers.

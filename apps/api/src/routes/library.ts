@@ -345,8 +345,9 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
     "/api/media/:id/artwork",
     { config: { summary: "Artwork bytes (public, placeholder when absent)", tags: ["media"] } },
     async (req, reply) => {
-      const { id } = parse(idParam, req.params);
-      const media = repos.media.get(id);
+      // id 0 is the public placeholder.
+      const { id } = parse(z.object({ id: z.coerce.number().int().min(0) }), req.params);
+      const media = id > 0 ? repos.media.get(id) : undefined;
       reply.header("cache-control", "public, max-age=86400");
       if (!media?.artwork_path || !existsSync(media.artwork_path))
         return reply.type("image/svg+xml").send(PLACEHOLDER_SVG);

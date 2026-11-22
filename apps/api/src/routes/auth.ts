@@ -126,16 +126,14 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
     "/api/auth/sessions",
     { preHandler: guard(), config: { summary: "My active sessions", tags: ["auth"] } },
     async (req) => ({
-      items: ctx.repos.sessions
-        .listForUser(req.auth.user!.id)
-        .map((s) => ({
-          id: s.id,
-          ip: s.ip,
-          user_agent: s.user_agent,
-          created_at: s.created_at,
-          expires_at: s.expires_at,
-          current: s.id === req.auth.sessionId,
-        })),
+      items: ctx.repos.sessions.listForUser(req.auth.user!.id).map((s) => ({
+        id: s.id,
+        ip: s.ip,
+        user_agent: s.user_agent,
+        created_at: s.created_at,
+        expires_at: s.expires_at,
+        current: s.id === req.auth.sessionId,
+      })),
     }),
   );
 

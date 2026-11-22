@@ -1,5 +1,6 @@
 /** Health/readiness (M12.6), Prometheus metrics (M12.2), WebSocket hub (M6.2), OpenAPI (M11.4). */
 import type { FastifyInstance } from "fastify";
+import WebSocket from "ws";
 import { PROJECT_NAME, PROJECT_VERSION, can } from "@radio/shared";
 import type { AppContext } from "../context.js";
 import type { BusMessage, Channel } from "../services/bus.js";
@@ -203,6 +204,32 @@ export async function systemRoutes(
       .send(
         `<!doctype html><meta charset="utf-8"><title>API</title><style>body{font:14px system-ui;background:#0b0f0e;color:#e5e7eb;padding:2rem}td{padding:.3rem .6rem;border-bottom:1px solid #1f2a25}code{color:#86efac}a{color:#22c55e}</style><h1>${ctx.config.station.name} API</h1><p>Machine-readable: <a href="/api/docs">/api/docs</a> (OpenAPI 3.1). Errors: <code>{ error: { code, message, details } }</code>.</p><table>${rows}</table>`,
       );
+  });
+
+  /* ── Live studio uplink relay ─────────────────────────────────────────
+   * nginx routes /ws/live straight to the worker in production; this relay
+   * covers single-process setups (demo, tests, no nginx). The worker checks
+   * the one-time token itself. */
+  app.get("/ws/live", { websocket: true }, (socket, req) => {
+    const token = new URL(req.url, "http://x").searchParams.get("token") ?? "";
+    const port = Number(process.env.PLAYOUT_LIVE_PORT ?? ctx.config.worker.protocolPort + 1);
+    const upstream = new WebSocket(
+      `ws://127.0.0.1:${port}/live?token=${encodeURIComponent(token)}`,
+    );
+    const pending: (Buffer | string)[] = [];
+    upstream.on("open", () => pending.splice(0).forEach((m) => upstream.send(m)));
+    upstream.on(
+      "message",
+      (data, isBinary) => socket.readyState === 1 && socket.send(data, { binary: isBinary }),
+    );
+    upstream.on("close", (code) => socket.close(code === 1005 ? 1000 : code));
+    upstream.on("error", () => socket.close(1011));
+    socket.on("message", (data: Buffer, isBinary: boolean) => {
+      const msg = isBinary ? data : data.toString();
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(msg);
+      else if (upstream.readyState === WebSocket.CONNECTING) pending.push(msg);
+    });
+    socket.on("close", () => upstream.close());
   });
 
   /* ── WebSocket hub (§6.8) ──────────────────────────────────────────── */

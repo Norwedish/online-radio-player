@@ -11,7 +11,7 @@ export default defineConfig({
   resolve: { alias },
   test: {
     include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
-    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "**/*.spec.ts"],
     environment: "node",
     reporters: ["default"],
   },

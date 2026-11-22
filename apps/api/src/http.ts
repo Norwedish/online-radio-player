@@ -91,15 +91,13 @@ export function sendError(
   log: (m: string) => void,
 ): FastifyReply {
   if (error instanceof ZodError) {
-    return reply
-      .status(400)
-      .send({
-        error: {
-          code: "validation_error",
-          message: "invalid request",
-          details: error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-        },
-      });
+    return reply.status(400).send({
+      error: {
+        code: "validation_error",
+        message: "invalid request",
+        details: error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+      },
+    });
   }
   if (error instanceof HttpError)
     return reply
@@ -131,15 +129,13 @@ export function sendError(
       .status(429)
       .send({ error: { code: "rate_limited", message: e.message ?? "too many requests" } });
   if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500) {
-    return reply
-      .status(e.statusCode)
-      .send({
-        error: {
-          code: typeof e.code === "string" && !e.code.startsWith("FST_") ? e.code : "bad_request",
-          message: e.message ?? "bad request",
-          details: e.details,
-        },
-      });
+    return reply.status(e.statusCode).send({
+      error: {
+        code: typeof e.code === "string" && !e.code.startsWith("FST_") ? e.code : "bad_request",
+        message: e.message ?? "bad request",
+        details: e.details,
+      },
+    });
   }
   if (
     e.message &&

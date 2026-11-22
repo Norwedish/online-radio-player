@@ -71,13 +71,11 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext): Promi
                   isRequest: false,
                 }
               : null,
-        next: (state?.queue ?? [])
-          .slice(0, 3)
-          .map((q) => ({
-            title: q.kind === "news" ? "News" : q.title,
-            artist: q.kind === "news" ? "" : q.artist,
-            kind: q.kind,
-          })),
+        next: (state?.queue ?? []).slice(0, 3).map((q) => ({
+          title: q.kind === "news" ? "News" : q.title,
+          artist: q.kind === "news" ? "" : q.artist,
+          kind: q.kind,
+        })),
         live: {
           active: Boolean(state?.live?.active),
           dj: live?.username ?? null,
@@ -150,16 +148,14 @@ export async function publicRoutes(app: FastifyInstance, ctx: AppContext): Promi
         req.query,
       );
       return {
-        items: repos.history
-          .recent(q.limit)
-          .map((h) => ({
-            title: h.title,
-            artist: h.artist,
-            album: h.album,
-            startedAt: h.started_at,
-            artworkUrl: h.artwork_path ? `/api/media/${h.media_id}/artwork` : null,
-            source: h.source,
-          })),
+        items: repos.history.recent(q.limit).map((h) => ({
+          title: h.title,
+          artist: h.artist,
+          album: h.album,
+          startedAt: h.started_at,
+          artworkUrl: h.artwork_path ? `/api/media/${h.media_id}/artwork` : null,
+          source: h.source,
+        })),
       };
     },
   );

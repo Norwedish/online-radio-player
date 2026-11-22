@@ -110,26 +110,22 @@ export async function buildServer(
     await app.register(fastifyStatic, { root: dist, prefix: "/", wildcard: false, index: false });
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith("/api/") || req.url.startsWith("/ws"))
-        return reply
-          .status(404)
-          .send({
-            error: {
-              code: "not_found",
-              message: `No route for ${req.method} ${req.url.split("?")[0]}`,
-            },
-          });
-      return reply.type("text/html").sendFile("index.html");
-    });
-  } else {
-    app.setNotFoundHandler((req, reply) =>
-      reply
-        .status(404)
-        .send({
+        return reply.status(404).send({
           error: {
             code: "not_found",
             message: `No route for ${req.method} ${req.url.split("?")[0]}`,
           },
-        }),
+        });
+      return reply.type("text/html").sendFile("index.html");
+    });
+  } else {
+    app.setNotFoundHandler((req, reply) =>
+      reply.status(404).send({
+        error: {
+          code: "not_found",
+          message: `No route for ${req.method} ${req.url.split("?")[0]}`,
+        },
+      }),
     );
   }
   return app;
