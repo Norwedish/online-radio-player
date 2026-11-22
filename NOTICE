@@ -10,12 +10,17 @@ supplied by the station owner, and run as separate processes.
 System components (not bundled; invoked as separate programs)
 -------------------------------------------------------------------------------
 
-Thimeo Stereo Tool (stereotool_cmd)
-  Commercial, proprietary software by Thimeo Audio Technology.
-  Not included, not redistributed. The station owner supplies the licensed
-  binary, preset and license file (installed to /opt/stereotool and
-  /etc/radio, mode 600). .gitignore blocks *.lic / *.sds / stereotool_cmd*.
-  Use is subject to Thimeo's own license terms for the purchased edition.
+Thimeo Stereo Tool (generic plugin libStereoTool_*.so; legacy stereotool_cmd)
+  Commercial, proprietary software by Thimeo Holding B.V. / Thimeo Audio
+  Technology. Not included, not redistributed: the station owner downloads
+  Stereo_Tool_Generic_plugin.zip from Thimeo and supplies the licence key and
+  preset. install.sh extracts the library to /opt/stereotool; the key lives in
+  /etc/radio/secrets.env and the preset in /etc/radio (mode 600). This project
+  does not include Thimeo's header files: the few C prototypes it calls are
+  declared in apps/playout/bin/stereotool-host.mjs, and the C test double in
+  apps/playout/src/stereotool/fixtures/ is original code. .gitignore blocks
+  *.lic / *.sds and Stereo Tool binaries/archives at the repository root.
+  Use is subject to Thimeo's own licence terms for the purchased edition.
   https://www.thimeo.com/stereo-tool/
 
 FFmpeg (ffmpeg, ffprobe)
@@ -55,7 +60,8 @@ tunnel-agent), OFL-1.1 (2: Barlow and Barlow Condensed fonts via
 (rc, expand-template, victory-vendor). No copyleft (GPL/LGPL/AGPL/MPL)
 licenses are present among production dependencies.
 
-Notable components: Fastify and plugins (MIT), React (MIT), Vite (MIT,
+Notable components: koffi (MIT, FFI used to load libStereoTool; prebuilt
+native module), Fastify and plugins (MIT), React (MIT), Vite (MIT,
 build-time), Tailwind CSS (MIT, build-time), TanStack Query (MIT), Recharts
 (MIT), lucide-react (ISC), hls.js (Apache-2.0), music-metadata (MIT),
 chokidar (MIT), better-sqlite3 (MIT), drizzle-orm (Apache-2.0),

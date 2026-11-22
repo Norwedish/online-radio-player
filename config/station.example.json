@@ -24,11 +24,13 @@
   },
   "stereotool": {
     "enabled": true,
+    "inputMode": "plugin",
+    "library": "/opt/stereotool/libStereoTool_intel64.so",
+    "preset": "/etc/radio/stereotool.sts",
+    "presetLoadType": "totalinit",
     "binary": "/opt/stereotool/stereotool_cmd",
-    "preset": "/etc/radio/stereotool.sds",
     "license": "/opt/stereotool/stereotool.lic",
     "edition": "live",
-    "inputMode": "stdio-pcm",
     "restart": { "maxAttempts": 5, "backoffMs": 2000 },
     "bypassOnFailure": true
   },

@@ -2,30 +2,30 @@
 
 **Plan:** [`PLAN.md`](./PLAN.md)  
 **Last updated:** 2026-11-22  
-**Current milestone:** Launch on the production LXC (M1–M15 done in software; host-only items in `docs/launch-checklist.md`; M0.5 Stereo Tool flags still need the licensed Linux binary)
+**Current milestone:** Launch on the production LXC (M1–M15 done in software; host-only items in `docs/launch-checklist.md`; Stereo Tool now uses the generic plugin library, verified with SDK 11.08; the station preset and licence key get checked on the host)
 
 > Rule: do not start the next milestone until the current one's acceptance criteria pass. Update this file after every task.
 
 ## Milestone status
 
-| Milestone                             | Status          | Notes                                                               |
-| ------------------------------------- | --------------- | ------------------------------------------------------------------- |
-| M0 — Foundations & spikes             | 🟡 M0.5 blocked | All other spikes done, ADRs 0001/0003/0004/0005 Accepted            |
-| M1 — Data model & config              | ✅ Done         | Seed, repositories, settings service, CLI, backup/restore, 14 tests |
-| M2 — Media library                    | ✅ Done         | 1,000 files scanned in 2.97 s; 10k-row queries < 8 ms               |
-| M3 — 24×1h generator port             | ✅ Done*        | *PHP golden diff pending (playlist_maker source needed)             |
-| M4 — Playout core                     | ✅ Done         | All §6.4.5 boundary rules tested on a simulated clock               |
-| M5 — Stereo Tool / encoders / Icecast | ✅ Done*        | *Real ST flags pending M0.5; chain 7.9% of 2 vCPU                   |
-| M6 — Interactive control API          | ✅ Done         | REST + WS + audit + requests + events + triggers                    |
-| M7 — Auth / RBAC / audit              | ✅ Done         | argon2id, CSRF, 3 roles, TOTP + recovery, reset, keys               |
-| M8 — Live studio                      | ✅ Done         | Browser mic → WS PCM → worker verified in E2E; recording            |
-| M9 — Admin UI & playout console       | ✅ Done         | Broadcast-console UI, studio clock, shortcuts, cart wall            |
-| M10 — Schedule / media / requests UI  | ✅ Done         | 9 Playwright E2E flows green                                        |
-| M11 — Public site & API               | ✅ Done         | /listen + schedule + requests; OpenAPI at /api/docs                 |
-| M12 — Alerts / metrics / backups      | ✅ Done         | All 4 alert channels + throttling tested; readiness down/recover    |
-| M13 — Deployment automation           | ✅ Done*        | *Verified in a clean Debian container; real LXC + reboot at launch  |
-| M14 — Testing / CI / staging          | ✅ Done*        | *Staging = `install.sh --staging`; no CI deploy target/host yet     |
-| M15 — Hardening / docs / launch       | 🟡 Host items   | Review/docs/NOTICE done; soak + checklist sign-off need the host    |
+| Milestone                             | Status        | Notes                                                               |
+| ------------------------------------- | ------------- | ------------------------------------------------------------------- |
+| M0 — Foundations & spikes             | ✅ Done*      | *M0.5: plugin library verified; licensed preset checked at launch   |
+| M1 — Data model & config              | ✅ Done       | Seed, repositories, settings service, CLI, backup/restore, 14 tests |
+| M2 — Media library                    | ✅ Done       | 1,000 files scanned in 2.97 s; 10k-row queries < 8 ms               |
+| M3 — 24×1h generator port             | ✅ Done*      | *PHP golden diff pending (playlist_maker source needed)             |
+| M4 — Playout core                     | ✅ Done       | All §6.4.5 boundary rules tested on a simulated clock               |
+| M5 — Stereo Tool / encoders / Icecast | ✅ Done       | libStereoTool plugin (ADR 0002); chain 7.9% of 2 vCPU               |
+| M6 — Interactive control API          | ✅ Done       | REST + WS + audit + requests + events + triggers                    |
+| M7 — Auth / RBAC / audit              | ✅ Done       | argon2id, CSRF, 3 roles, TOTP + recovery, reset, keys               |
+| M8 — Live studio                      | ✅ Done       | Browser mic → WS PCM → worker verified in E2E; recording            |
+| M9 — Admin UI & playout console       | ✅ Done       | Broadcast-console UI, studio clock, shortcuts, cart wall            |
+| M10 — Schedule / media / requests UI  | ✅ Done       | 9 Playwright E2E flows green                                        |
+| M11 — Public site & API               | ✅ Done       | /listen + schedule + requests; OpenAPI at /api/docs                 |
+| M12 — Alerts / metrics / backups      | ✅ Done       | All 4 alert channels + throttling tested; readiness down/recover    |
+| M13 — Deployment automation           | ✅ Done*      | *Verified in a clean Debian container; real LXC + reboot at launch  |
+| M14 — Testing / CI / staging          | ✅ Done*      | *Staging = `install.sh --staging`; no CI deploy target/host yet     |
+| M15 — Hardening / docs / launch       | 🟡 Host items | Review/docs/NOTICE done; soak + checklist sign-off need the host    |
 
 ## M0 — Foundations and technical spikes
 
@@ -33,7 +33,13 @@
 - [x] **M0.2 Repo skeleton** — `apps/api`, `apps/playout`, `apps/web`, `packages/core`, `packages/db`, `packages/shared`, config/scripts/docs.
 - [x] **M0.3 Dev environment** — dev scripts, Icecast compose file, mock Stereo Tool, example configs.
 - [x] **M0.4 Spike: FFmpeg PCM chain** — chain verified (ADR 0001, **Accepted**): mount open in 102 ms / visible 267–464 ms, listener first byte 117–177 ms, MP3 320 k verified by `ffprobe`, capture decodes clean. Key finding: pipe-fed encoders need `-analyzeduration 0 -probesize 32768` (defaults cost 3.7 s). 10-minute soak recorded in `data/fixtures/spike-soak-600.json`.
-- [ ] **M0.5 Spike: Thimeo Stereo Tool CLI** — determine continuous PCM stdin/stdout method; edition/license/preset checks.
+- [x] **M0.5 Spike: Thimeo Stereo Tool** — switched to the **generic plugin library**
+      (`libStereoTool_intel64.so`, SDK 11.08), as Liquidsoap's `stereotool` operator and AzuraCast
+      do; loaded via koffi in an isolated host process (ADR 0002, Accepted). Measured: loads
+      headless (needs `libasound2t64` only), latency 85 ms, 0.8 % of one core with default
+      settings, no listening ports; licence/unlicensed-feature checks wired to an alert. Found:
+      the preset load-type enum moved between SDK versions (20387 vs Liquidsoap's 10387), so the
+      host tries both. Remaining on the host: the station `.sts` preset with the purchased key.
 - [x] **M0.6 Spike: Icecast HLS** - upstream Icecast 2.5.0 has **no HLS** (verified: release notes, docs, 2.6 milestone). Fallback implemented and measured (ADR 0003, **Accepted**): FFmpeg AAC 96k HLS (2 s segments, 6-segment live window) served by nginx; Chrome + hls.js plays at 2.1 s / 4.1 s / ~14 s latency depending on `liveSyncDurationCount` (1/2/3); nginx headers correct. Firefox/Safari pending a staging host.
 - [x] **M0.7 Spike: live transport** - browser studio = **WebSocket PCM** (ADR 0004, **Accepted**): 936 frames/20 s, avg arrival 0.89 ms, p95 1.7 ms, jitter 2.03 ms, 0 sequence gaps, 772.9 kbps mono; external DJs = **Icecast `/live` ingest** (15/15 marker bursts, median 47 ms source->listener). LiveKit deferred (extra SFU on 2 vCPU); documented as the upgrade path.
 - [x] **M0.8 Spike: SQLite concurrency** - WAL verified (ADR 0005, **Accepted**): 1500 inserts at 50/s with 0 `SQLITE_BUSY` retries across 1 writer + 2 readonly readers, `db.backup()` ok mid-load, WAL ~4.1 MB.
@@ -290,10 +296,15 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | `shellcheck -S warning scripts/*.sh` | ✅ | clean |
 | 2026-11-22 | `pnpm audit --audit-level high` | ✅ | 0 unignored; GHSA-mrhx-c7xc-m3w5 (zod 3) ignored with mitigation, see security review |
 | 2026-11-22 | `gitleaks detect` (full history) | ✅ | 18 commits, no leaks |
+| 2026-11-22 | libStereoTool 11.08 C probe (Debian 12) | ✅ | dlopen OK with `libasound2`; software 11080 / API 256; latency 4096 samples (85 ms); 30 s audio = 0.23 s CPU; output = input level at default settings; no listening ports |
+| 2026-11-22 | `stereotool-host.mjs` + real library, 10 s tone | ✅ | 1 920 000 bytes in = out; −18.1 dBFS in/out; licence re-check event after 10 s |
+| 2026-11-22 | `pnpm test:coverage` (Debian, fake libStereoTool compiled) | ✅ | 176 tests / 20 files incl. koffi round-trip, load-type fallback, licence alert, crash isolation |
+| 2026-11-22 | `STEREOTOOL_LIBRARY=… pnpm test:integration` (real library + Icecast) | ✅ | 8/8; plugin mode 5 s in → 5 s out at −23.0 dBFS |
+| 2026-11-22 | `install.sh --stereotool Stereo_Tool_Generic_plugin.zip` (clean Debian 13) | ✅ | extracts `libStereoTool_intel64.so`, `.currentversion` 1108, `inputMode: plugin`, probe OK, `libasound2t64` installed; shellcheck clean |
 
 ## Blockers / open decisions
 
-- Thimeo Stereo Tool edition and exact streaming CLI method — M0.5 spike.
+- Thimeo Stereo Tool: resolved, generic plugin library (ADR 0002); the licensed preset is checked at launch.
 - Domain, SMTP, webhook endpoints, station branding — placeholders until deployment.
 - Emergency loop file — user-provided; validate at install/startup.
 - Dev-host caveat: FFmpeg here is a Scoop shim, so exit codes and CPU counters are unreliable
@@ -306,7 +317,7 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
    reboot, restore drill, 24 h soak, browser check, sign-off).
 2. **Repository:** enable branch protection on `main` requiring the CI jobs.
 3. **Still needs external input:** PHP golden diff for the generator (playlist_maker source),
-   M0.5 Stereo Tool flags (licensed binary), Firefox/Safari HLS on a public host.
+   the station's Stereo Tool preset with the purchased key, Firefox/Safari HLS on a public host.
 4. **Post-launch:** migrate zod 3 → 4 and drop the audit exception.
 
 ## M12–M14 — Operations, deployment, testing (2026-11-22)

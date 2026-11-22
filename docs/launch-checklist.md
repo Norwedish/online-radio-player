@@ -16,10 +16,11 @@ software side of every item has been verified in CI and a clean container.
 https://<domain>/stream/admin/` returns 404.
 - [ ] **Admin account** — first-login password changed; TOTP enabled for every admin; recovery
       codes stored offline; personal accounts created for each operator/DJ (no shared logins).
-- [ ] **Stereo Tool (host)** — licensed `stereotool_cmd` in `/opt/stereotool`, preset in place,
-      `stereotool.args` confirmed by hand (install.md §4); _Dashboard_ shows Stereo Tool
-      **running**, not bypassed; ADR 0002 updated with the confirmed command and measured
-      latency/CPU.
+- [ ] **Stereo Tool (host)** — installed with `--stereotool` (the generic plugin zip) and
+      `--preset` (the station `.sts`); `STEREOTOOL_LICENSE_KEY` set in `secrets.env`; the probe in
+      install.md (Stereo Tool section) shows `"valid":true` with empty `unlicensedFeatures` for the station
+      preset; _Dashboard_ shows Stereo Tool **plugin, licensed**, not bypassed; listen for beeps or
+      voice-overs (unlicensed marker); CPU with the real preset recorded in ADR 0002.
 - [ ] **Media scan** — library linked/copied; _Media library → Scan library_ finished with few or
       no errors; loudness backfill done (`pnpm media:scan --analyze` or wait for the background
       job); each `[PM] HH:00` playlist, `General`, `Jingles` and `Nieuws` has content.

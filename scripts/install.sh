@@ -10,8 +10,10 @@
 #   --email ADDR           Let's Encrypt account email (required for Certbot)
 #   --skip-certbot         do not request a TLS certificate
 #   --stereotool-bypass    run without Thimeo Stereo Tool (stereotool.enabled=false)
-#   --stereotool DIR       directory holding stereotool_cmd (+ .lic); copied to /opt/stereotool
-#   --preset FILE          Stereo Tool preset (.sts/.sds) copied to /etc/radio/stereotool.sds
+#   --stereotool PATH      Thimeo Stereo_Tool_Generic_plugin.zip (recommended: the libStereoTool
+#                          plugin, like Liquidsoap/AzuraCast), a libStereoTool*.so, or a directory
+#                          with either the .so or the legacy stereotool_cmd; installed to /opt/stereotool
+#   --preset FILE          Stereo Tool preset (.sts) copied to /etc/radio/stereotool.sts
 #   --media DIR            existing media library to link as /srv/radio/media
 #   --emergency FILE       emergency loop audio file
 #   --station-name NAME    station name for the first config
@@ -99,6 +101,8 @@ step "System packages"
 export DEBIAN_FRONTEND=noninteractive
 run apt-get update -qq
 run apt-get install -y -qq ffmpeg icecast2 sqlite3 nginx curl ca-certificates gnupg unzip build-essential python3 rsync jq
+# libStereoTool links against the ALSA userspace library (no sound device needed); Debian 13 renamed it.
+run apt-get install -y -qq libasound2t64 2>/dev/null || run apt-get install -y -qq libasound2
 [[ $SKIP_CERTBOT -eq 1 ]] || run apt-get install -y -qq certbot python3-certbot-nginx
 # We run Icecast through radio-icecast.service with our generated config.
 if [[ $HAS_SYSTEMD -eq 1 ]]; then run systemctl disable --now icecast2 >/dev/null 2>&1 || true; fi
@@ -175,7 +179,7 @@ if [[ ! -f "$CONF" ]]; then
       | .audio.emergencyFile = ($root + "/media/Emergency/emergency-loop.mp3")
       | .backups.dir = ($root + "/backups") | .db.backupDir = ($root + "/backups") | .db.file = ($root + "/var/radio.sqlite")
       | .worker.logDir = ($root + "/logs") | .web.publicBaseUrl = ("https://" + $domain + "/listen")
-      | .stereotool.enabled = $st' "$APP/config/station.example.json" >"$CONF"
+      | .stereotool.enabled = $st | .stereotool.preset = ($etc + "/stereotool.sts")' --arg etc "$ETC" "$APP/config/station.example.json" >"$CONF"
     chown root:radio "$CONF"
     chmod 640 "$CONF"
   fi
@@ -201,26 +205,79 @@ fi
 ffprobe -v error "$EMERGENCY" >/dev/null 2>&1 || [[ $DRY -eq 1 ]] || warn "emergency loop is not a readable audio file"
 
 step "Thimeo Stereo Tool"
+# Library for this CPU, like AzuraCast: the headless (non-X11) build from lib/Linux/<arch>.
+st_lib_name() {
+  case "$(uname -m)" in
+    x86_64) echo "libStereoTool_intel64.so" ;;
+    aarch64|arm64) echo "libStereoTool_arm64.so" ;;
+    i?86) echo "libStereoTool_intel32.so" ;;
+    armv7l|armhf) echo "libStereoTool_arm32.so" ;;
+    *) echo "libStereoTool_intel64.so" ;;
+  esac
+}
+set_conf() { [[ $DRY -eq 1 ]] || { jq "$@" "$CONF" >"$CONF.tmp" && mv "$CONF.tmp" "$CONF" && chown root:radio "$CONF" && chmod 640 "$CONF"; }; }
 if [[ $ST_BYPASS -eq 1 ]]; then
   info "bypass requested: stereotool.enabled=false"
 else
+  LIBNAME="$(st_lib_name)"
   if [[ -n "$ST_DIR" ]]; then
     run mkdir -p /opt/stereotool
-    run cp -a "$ST_DIR"/. /opt/stereotool/
-    run chmod 755 /opt/stereotool/stereotool_cmd* 2>/dev/null || true
-    run chmod 600 /opt/stereotool/*.lic 2>/dev/null || true
-    run chown -R radio:radio /opt/stereotool
+    if [[ -f "$ST_DIR" && "$ST_DIR" == *.zip ]]; then
+      # Stereo_Tool_Generic_plugin.zip: libStereoTool_<version>/lib/Linux/<arch>/<lib>.so
+      TMPX="$(mktemp -d)"
+      run unzip -q -o "$ST_DIR" -d "$TMPX" 2>/dev/null || true   # warns about backslash paths; still extracts
+      FOUND="$(find "$TMPX" -type f -name "$LIBNAME" ! -path '*Kantar*' | head -1)"
+      if [[ -n "$FOUND" ]]; then
+        run install -o radio -g radio -m 644 "$FOUND" "/opt/stereotool/$LIBNAME"
+        VERSION_DIR="$(find "$TMPX" -maxdepth 1 -type d -name 'libStereoTool_*' | head -1)"
+        [[ -n "$VERSION_DIR" && $DRY -eq 0 ]] && basename "$VERSION_DIR" | sed 's/^libStereoTool_//' >/opt/stereotool/.currentversion
+        info "installed $LIBNAME from $(basename "$ST_DIR")"
+      else
+        warn "$LIBNAME not found in $ST_DIR (expected lib/Linux/... inside Thimeo's generic plugin zip)"
+      fi
+      rm -rf "$TMPX"
+    elif [[ -f "$ST_DIR" && "$ST_DIR" == *.so ]]; then
+      run install -o radio -g radio -m 644 "$ST_DIR" "/opt/stereotool/$LIBNAME"
+    else
+      run cp -a "$ST_DIR"/. /opt/stereotool/
+      run chmod 755 /opt/stereotool/stereotool_cmd* 2>/dev/null || true
+      run chmod 600 /opt/stereotool/*.lic 2>/dev/null || true
+      run chown -R radio:radio /opt/stereotool
+    fi
   fi
-  [[ -n "$ST_PRESET" ]] && run install -o radio -g radio -m 600 "$ST_PRESET" "$ETC/stereotool.sds"
-  BIN="$(jq -r .stereotool.binary "$CONF" 2>/dev/null || echo /opt/stereotool/stereotool_cmd)"
-  if [[ -x "$BIN" ]]; then
-    VERSION="$("$BIN" --version 2>&1 | head -1 || true)"
-    info "found $BIN: ${VERSION:-version unknown}"
-    if [[ -f "$(jq -r .stereotool.license "$CONF")" ]] || grep -q '^STEREOTOOL_LICENSE_KEY=.\+' "$SECRETS" 2>/dev/null; then EDITION=live; else EDITION=free; fi
-    [[ $DRY -eq 1 ]] || { jq --arg e "$EDITION" '.stereotool.edition = $e' "$CONF" >"$CONF.tmp" && mv "$CONF.tmp" "$CONF" && chown root:radio "$CONF" && chmod 640 "$CONF"; }
-    info "edition: $EDITION (confirm stereotool.args against your binary — ADR 0002)"
+  [[ -n "$ST_PRESET" ]] && run install -o radio -g radio -m 600 "$ST_PRESET" "$ETC/stereotool.sts"
+  PRESET="$(jq -r .stereotool.preset "$CONF" 2>/dev/null)"
+  [[ -f "$PRESET" ]] || warn "no Stereo Tool preset at $PRESET: the library runs with its default settings (pass --preset FILE.sts)"
+  LIB="/opt/stereotool/$LIBNAME"
+  if [[ -f "$LIB" ]]; then
+    # Prefer the plugin library whenever it is installed.
+    set_conf --arg lib "$LIB" '.stereotool.inputMode = "plugin" | .stereotool.library = $lib'
+    run mkdir -p "$ROOT/var/stereotool" && run chown radio:radio "$ROOT/var/stereotool"
+    # Load it once as the radio user: version, latency, preset and licence check.
+    PROBE_CFG="$(jq -nc --arg lib "$LIB" --arg preset "$( [[ -f "$PRESET" ]] && echo "$PRESET" )" --arg home "$ROOT/var/stereotool" \
+      '{library: $lib, preset: (if $preset == "" then null else $preset end), loadType: "totalinit", licenseKeyEnv: "STEREOTOOL_LICENSE_KEY", home: $home}')"
+    if [[ $DRY -eq 0 ]]; then
+      PROBE="$(as_radio "set -a && . '$SECRETS' && set +a && STEREOTOOL_HOST='$PROBE_CFG' node '$APP/apps/playout/bin/stereotool-host.mjs' --probe 2>&1" | grep '^@stereotool ' | sed 's/^@stereotool //' || true)"
+      if [[ -n "$PROBE" ]]; then
+        info "libStereoTool $(jq -r '.softwareVersion' <<<"$PROBE") (API $(jq -r '.apiVersion' <<<"$PROBE")), latency $(jq -r '.latencyMs' <<<"$PROBE") ms, licence valid: $(jq -r '.valid' <<<"$PROBE")"
+        [[ "$(jq -r '.unlicensedFeatures' <<<"$PROBE")" == "" ]] || warn "unlicensed features in the preset: $(jq -r '.unlicensedFeatures' <<<"$PROBE") — set STEREOTOOL_LICENSE_KEY in $SECRETS"
+        if grep -q '^STEREOTOOL_LICENSE_KEY=.\+' "$SECRETS" 2>/dev/null; then EDITION=live; else EDITION=free; fi
+        set_conf --arg e "$EDITION" '.stereotool.edition = $e'
+      else
+        warn "libStereoTool at $LIB could not be loaded or the preset failed (see: journalctl -u radio-playout$SUFFIX)"
+      fi
+    fi
   else
-    warn "stereotool_cmd not found at $BIN: playout will bypass processing and raise a critical alert until it is installed (or re-run with --stereotool-bypass)"
+    BIN="$(jq -r .stereotool.binary "$CONF" 2>/dev/null || echo /opt/stereotool/stereotool_cmd)"
+    if [[ -x "$BIN" ]]; then
+      set_conf '.stereotool.inputMode = "stdio-pcm"'
+      VERSION="$("$BIN" --version 2>&1 | head -1 || true)"
+      info "found legacy $BIN: ${VERSION:-version unknown} (the plugin library is recommended — ADR 0002)"
+      if [[ -f "$(jq -r .stereotool.license "$CONF")" ]] || grep -q '^STEREOTOOL_LICENSE_KEY=.\+' "$SECRETS" 2>/dev/null; then EDITION=live; else EDITION=free; fi
+      set_conf --arg e "$EDITION" '.stereotool.edition = $e'
+    else
+      warn "no Stereo Tool installed ($LIB / $BIN): playout bypasses processing and raises a critical alert until it is (pass --stereotool Stereo_Tool_Generic_plugin.zip, or --stereotool-bypass)"
+    fi
   fi
 fi
 

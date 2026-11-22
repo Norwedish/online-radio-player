@@ -5,21 +5,22 @@ findings; one accepted exception (below).
 
 ## Method
 
-| Area                | How it was checked                                                                            | Result                                                                  |
-| ------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Dependency audit    | `pnpm audit --audit-level high` (also a CI job)                                               | 0 unignored; 1 high ignored with mitigation (see exceptions)            |
-| Secrets in git      | `gitleaks detect` with `.gitleaks.toml` over the full history (also a CI job)                 | 18 commits, no leaks                                                    |
-| Committed artefacts | `.gitignore` review                                                                           | Fixed: unanchored patterns had hidden source dirs (see F-1)             |
-| HTTP headers        | `deploy/nginx/radio.conf.template`, `apps/api/src/server.ts`                                  | CSP, nosniff, frame-options, referrer and permissions policy set        |
-| AuthN/session       | `apps/api/src/routes/auth.ts`, `services/auth.ts`, API tests                                  | argon2id, opaque tokens, HttpOnly + SameSite=Lax, CSRF double submit    |
-| RBAC                | `packages/shared/src/roles.ts` matrix vs every route guard (generated table in `docs/api.md`) | Every non-public route has a guard; RBAC matrix test passes             |
-| Uploads             | `routes/library.ts` upload + artwork routes, upload test                                      | Extension allow-list, magic-byte sniffing, random names, 500 MB cap     |
-| Rate limits         | route configs                                                                                 | Login 10/min, reset 5/15 min, public 60/min, requests 10/min            |
-| Proxy trust         | `trustProxy` setting                                                                          | Loopback only (fixed in M14: spoofed `X-Forwarded-For` bypassed limits) |
-| Icecast exposure    | Icecast bind address, nginx template                                                          | Fixed: `/stream/admin` was proxied publicly (see F-2)                   |
-| Process isolation   | systemd units                                                                                 | `User=radio`, `NoNewPrivileges`, `ProtectSystem=full`, `PrivateTmp`     |
-| Secrets at rest     | `install.sh`                                                                                  | `/etc/radio/secrets.env` 600 radio; Stereo Tool `.lic` 600              |
-| Logging             | alert/syslog paths, encoder/Stereo Tool stderr                                                | Icecast source password and Stereo Tool key redacted from process logs  |
+| Area                | How it was checked                                                                            | Result                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Dependency audit    | `pnpm audit --audit-level high` (also a CI job)                                               | 0 unignored; 1 high ignored with mitigation (see exceptions)                                         |
+| Secrets in git      | `gitleaks detect` with `.gitleaks.toml` over the full history (also a CI job)                 | 18 commits, no leaks                                                                                 |
+| Committed artefacts | `.gitignore` review                                                                           | Fixed: unanchored patterns had hidden source dirs (see F-1)                                          |
+| HTTP headers        | `deploy/nginx/radio.conf.template`, `apps/api/src/server.ts`                                  | CSP, nosniff, frame-options, referrer and permissions policy set                                     |
+| AuthN/session       | `apps/api/src/routes/auth.ts`, `services/auth.ts`, API tests                                  | argon2id, opaque tokens, HttpOnly + SameSite=Lax, CSRF double submit                                 |
+| RBAC                | `packages/shared/src/roles.ts` matrix vs every route guard (generated table in `docs/api.md`) | Every non-public route has a guard; RBAC matrix test passes                                          |
+| Uploads             | `routes/library.ts` upload + artwork routes, upload test                                      | Extension allow-list, magic-byte sniffing, random names, 500 MB cap                                  |
+| Rate limits         | route configs                                                                                 | Login 10/min, reset 5/15 min, public 60/min, requests 10/min                                         |
+| Proxy trust         | `trustProxy` setting                                                                          | Loopback only (fixed in M14: spoofed `X-Forwarded-For` bypassed limits)                              |
+| Icecast exposure    | Icecast bind address, nginx template                                                          | Fixed: `/stream/admin` was proxied publicly (see F-2)                                                |
+| Process isolation   | systemd units                                                                                 | `User=radio`, `NoNewPrivileges`, `ProtectSystem=full`, `PrivateTmp`                                  |
+| Vendor native code  | Stereo Tool plugin host (ADR 0002)                                                            | Proprietary library runs in its own child process; web/UECP bound to loopback; key via env, not argv |
+| Secrets at rest     | `install.sh`                                                                                  | `/etc/radio/secrets.env` 600 radio; Stereo Tool `.lic` 600                                           |
+| Logging             | alert/syslog paths, encoder/Stereo Tool stderr                                                | Icecast source password and Stereo Tool key redacted from process logs                               |
 
 ## Findings
 

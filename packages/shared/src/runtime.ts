@@ -121,6 +121,9 @@ export function loadRuntimeConfig(
   if (env.ICECAST_HOST) config.icecast.host = env.ICECAST_HOST;
   if (env.ICECAST_PORT) config.icecast.port = Number(env.ICECAST_PORT);
   if (env.STEREOTOOL_BINARY) config.stereotool.binary = env.STEREOTOOL_BINARY;
+  if (env.STEREOTOOL_LIBRARY) config.stereotool.library = env.STEREOTOOL_LIBRARY;
+  if (env.STEREOTOOL_MODE === "plugin" || env.STEREOTOOL_MODE === "stdio-pcm")
+    config.stereotool.inputMode = env.STEREOTOOL_MODE;
   if (env.STEREOTOOL_PRESET) config.stereotool.preset = env.STEREOTOOL_PRESET;
   if (env.STEREOTOOL_LICENSE) config.stereotool.license = env.STEREOTOOL_LICENSE;
   if (env.STEREOTOOL_ENABLED !== undefined)
@@ -130,11 +133,16 @@ export function loadRuntimeConfig(
     config.icecast.hls.enabled = env.HLS_ENABLED === "1" || env.HLS_ENABLED === "true";
   if (env.STATION_NAME) config.station.name = env.STATION_NAME;
 
+  // Dev/test fall back to the passthrough mock when Stereo Tool is not installed. Production
+  // never does: a missing library/binary must raise `stereotool_missing` instead.
+  const stereotoolPath =
+    config.stereotool.inputMode === "plugin" ? config.stereotool.library : config.stereotool.binary;
   const stereotoolMock =
     env.STEREOTOOL_MOCK === "1" ||
     (env.STEREOTOOL_MOCK !== "0" &&
+      nodeEnv !== "production" &&
       config.stereotool.enabled &&
-      !existsSync(config.stereotool.binary));
+      !existsSync(stereotoolPath));
 
   return {
     ...config,

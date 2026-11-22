@@ -105,7 +105,28 @@ const stereotoolSchema = z
       .union([z.literal("live"), z.literal("free"), z.literal("unknown")])
       .default("unknown")
       .describe("Detected at install time; 'live' is the licensed purchase"),
-    inputMode: z.literal("stdio-pcm").default("stdio-pcm"),
+    inputMode: z
+      .union([z.literal("plugin"), z.literal("stdio-pcm")])
+      .default("plugin")
+      .describe(
+        "'plugin' = Thimeo generic plugin library (libStereoTool_*.so, like Liquidsoap/AzuraCast); 'stdio-pcm' = legacy stereotool_cmd binary",
+      ),
+    library: pathValue("libStereoTool shared library (.so) for inputMode 'plugin'").default(
+      "/opt/stereotool/libStereoTool_intel64.so",
+    ),
+    presetLoadType: z
+      .union([
+        z.literal("totalinit"),
+        z.literal("all_settings"),
+        z.literal("audiofm"),
+        z.literal("audio"),
+        z.literal("processing"),
+        z.number().int().nonnegative(),
+      ])
+      .default("totalinit")
+      .describe(
+        "Which parts of the preset to load (plugin mode); a number is passed to stereoTool_LoadPreset as-is",
+      ),
     args: z
       .array(z.string())
       .default(["-", "-", "-s", "{preset}"])

@@ -13,6 +13,7 @@
     "@radio/core": "workspace:*",
     "@radio/db": "workspace:*",
     "@radio/shared": "workspace:*",
+    "koffi": "3.3.7",
     "luxon": "^3.7.2",
     "ws": "^8.23.0",
     "zod": "^3.24.0"

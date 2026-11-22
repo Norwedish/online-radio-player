@@ -36,8 +36,11 @@ cd ~/online-radio-player
 
 Have ready (all optional; the installer works without them and tells you what's missing):
 
-- **Thimeo Stereo Tool** for Linux: a directory with `stereotool_cmd` (and the `.lic` file if
-  your edition uses one), plus your preset (`.sts`/`.sds`). Commercial software; never commit it.
+- **Thimeo Stereo Tool**: the generic plugin download
+  [`Stereo_Tool_Generic_plugin.zip`](https://download.thimeo.com/Stereo_Tool_Generic_plugin.zip)
+  as-is (the same library Liquidsoap and AzuraCast use), your licence key, and your station preset
+  (`.sts`, exported from Stereo Tool). Commercial software: never commit it. The legacy
+  `stereotool_cmd` binary still works (pass its directory instead).
 - Your **media library** directory (or NAS mount path).
 - An **emergency loop** audio file (played on silence/failure). A placeholder beep is generated
   if you don't have one yet.
@@ -48,15 +51,15 @@ Have ready (all optional; the installer works without them and tells you what's 
 sudo ./scripts/install.sh \
   --domain radio.example.com --email ops@example.com \
   --station-name "Harbour FM" \
-  --stereotool /root/stereotool --preset /root/harbour.sts \
+  --stereotool /root/Stereo_Tool_Generic_plugin.zip --preset /root/harbour.sts \
   --media /mnt/nas-music --emergency /root/station-loop.mp3
 ```
 
 What it does (each step is skipped if already done): preflight (OS, CPU, RAM, ports) → packages
 (FFmpeg, Icecast 2, nginx, SQLite, Certbot) → Node.js 22 + pnpm → `radio` system user and
 `/srv/radio/*` → code synced to `/srv/radio/app`, built → secrets in `/etc/radio/secrets.env`
-(random passwords) → `/etc/radio/station.json` → media link and emergency loop → Stereo Tool to
-`/opt/stereotool` with edition detection → DB migrate + seed (24 hour playlists and slots) and
+(random passwords) → `/etc/radio/station.json` → media link and emergency loop → Stereo Tool library for this CPU
+extracted to `/opt/stereotool` and test-loaded (version, latency, licence) → DB migrate + seed (24 hour playlists and slots) and
 the first admin → Icecast config → systemd units → nginx site with security headers → start →
 Let's Encrypt (unless `--skip-certbot`) → smoke test.
 
@@ -94,22 +97,42 @@ Then reboot once (`reboot`) and run the same checks: all units are enabled and s
 - Everything operational (branding, ducking, request rules, retention, alert recipients) is in
   the web UI under _Settings_.
 
-### Stereo Tool command line
+### Stereo Tool
 
-The adapter runs `stereotool.binary` with `stereotool.args`, feeding 48 kHz/16-bit stereo PCM
-(wrapped in a streaming WAV header when `wavIo` is true) on stdin and reading processed audio
-from stdout. Default arguments are `["-", "-", "-s", "{preset}"]`; placeholders `{preset}`,
-`{license}`, `{licenseKey}`, `{rate}`, `{channels}` are filled in. **Confirm the arguments against
-your licensed binary** (ADR 0002 / M0.5) — run it by hand first:
+The default is Thimeo's **generic plugin library** (`stereotool.inputMode: "plugin"`). The playout
+worker starts a small host process (`apps/playout/bin/stereotool-host.mjs`) that loads
+`stereotool.library` and processes the station's 48 kHz stereo PCM with the preset in
+`stereotool.preset`. This is the same API Liquidsoap's `stereotool` operator uses (ADR 0002).
 
-```bash
-ffmpeg -v error -f lavfi -i "sine=f=440:d=5" -ac 2 -ar 48000 -f wav - \
-  | /opt/stereotool/stereotool_cmd - - -s /etc/radio/stereotool.sds \
-  | ffprobe -v error -show_entries stream=codec_name,sample_rate,channels -
-```
+1. **Licence key:** put it in `/etc/radio/secrets.env` as `STEREOTOOL_LICENSE_KEY=…` (the name is
+   `stereotool.licenseKeyEnv`). Without a valid key the library still runs but adds beeps/voice to
+   the audio; the console then shows Stereo Tool as **unlicensed** and raises the
+   `stereotool_unlicensed` alert.
+2. **Preset:** export your preset from Stereo Tool as `.sts` and install it as
+   `/etc/radio/stereotool.sts` (`--preset`, or copy it with mode 600 owned by `radio`).
+   `stereotool.presetLoadType` picks which parts load (default `totalinit`, like Liquidsoap and
+   AzuraCast; also `all_settings`, `audiofm`, `audio`, `processing`).
+3. **Updating Stereo Tool:** re-run `sudo ./scripts/install.sh --stereotool <new zip>` (only that step
+   changes anything) and `systemctl restart radio-playout`.
+4. **Check it** by hand, as the `radio` user:
 
-If Stereo Tool exits or stalls (no output for 5 s), the worker restarts it with backoff and keeps
-the station on air unprocessed meanwhile (`bypassOnFailure`, critical alert).
+   ```bash
+   sudo -u radio env STEREOTOOL_LICENSE_KEY=… \
+     STEREOTOOL_HOST='{"library":"/opt/stereotool/libStereoTool_intel64.so","preset":"/etc/radio/stereotool.sts","licenseKeyEnv":"STEREOTOOL_LICENSE_KEY"}' \
+     node /srv/radio/app/apps/playout/bin/stereotool-host.mjs --probe 2>&1 | grep @stereotool
+   # @stereotool {"event":"ready","softwareVersion":11080,"apiVersion":256,"latencyMs":85,"loadType":20387,"valid":true,"unlicensedFeatures":""}
+   ```
+
+   The console (_Dashboard_, _Playout_) shows the mode (`plugin`), version and licence state.
+
+If the library crashes or stalls (no output for 5 s), only the host process dies. The worker
+restarts it with backoff and keeps the station on air unprocessed meanwhile (`bypassOnFailure`,
+critical alert). While the host starts up, audio is also passed through unprocessed, so a restart
+never adds delay to the stream.
+
+**Legacy CLI.** With only `stereotool_cmd`, set `inputMode: "stdio-pcm"`; the worker then runs
+`stereotool.binary` with `stereotool.args` (default `["-", "-", "-s", "{preset}"]`, placeholders
+`{preset} {license} {licenseKey} {rate} {channels}`), optionally WAV-framed (`wavIo`).
 
 ## 5. Staging
 

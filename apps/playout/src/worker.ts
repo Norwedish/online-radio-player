@@ -153,6 +153,8 @@ export class PlayoutWorker {
     this.stereotool = createStereoTool(this.config.stereotool, {
       mock: this.config.stereotoolMock,
       mockScript: join(this.config.rootDir, "scripts/mock-stereotool.mjs"),
+      hostScript: join(this.config.rootDir, "apps/playout/bin/stereotool-host.mjs"),
+      homeDir: join(this.config.dataDir, "var/stereotool"),
       log: this.log,
       alert: (a) => this.alert(a),
     });

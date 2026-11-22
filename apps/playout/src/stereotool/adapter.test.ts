@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseStationConfig, type WorkerAlert } from "@radio/shared";
 import { describe, expect, it } from "vitest";
@@ -123,7 +125,10 @@ describe("Stereo Tool adapter (M5.1 / M5.6)", () => {
 
   it("raises stereotool_missing when the binary is absent", async () => {
     const h = harness();
-    const st = createStereoTool(stConfig({ binary: "/nonexistent/stereotool_cmd" }), h.opts);
+    const st = createStereoTool(
+      stConfig({ inputMode: "stdio-pcm", binary: "/nonexistent/stereotool_cmd" }),
+      h.opts,
+    );
     await st.start();
     expect(h.alerts[0]).toMatchObject({ type: "stereotool_missing", severity: "critical" });
     expect(st.status()).toMatchObject({ running: false, bypassed: true, mode: "stdio-pcm" });
@@ -147,5 +152,141 @@ describe("Stereo Tool adapter (M5.1 / M5.6)", () => {
     expect(st.restarts).toBeGreaterThanOrEqual(1);
     expect(h.alerts[0]?.type).toBe("stereotool_bypass");
     await st.stop();
+  });
+});
+
+/** Builds the fake libStereoTool with the system C compiler, or null when there is none. */
+function buildFakeLibrary(): string | null {
+  const dir = mkdtempSync(join(tmpdir(), "fake-st-"));
+  const out = join(dir, process.platform === "win32" ? "fake.dll" : "libfake.so");
+  for (const cc of ["cc", "gcc", "clang"]) {
+    try {
+      execFileSync(
+        cc,
+        [
+          "-shared",
+          "-fPIC",
+          "-O2",
+          "-o",
+          out,
+          join(import.meta.dirname, "fixtures/fake-libstereotool.c"),
+        ],
+        { stdio: "ignore" },
+      );
+      return out;
+    } catch {
+      // try the next compiler
+    }
+  }
+  return null;
+}
+
+const FAKE_LIB = buildFakeLibrary();
+
+describe("Stereo Tool plugin mode (libStereoTool via koffi)", () => {
+  it("raises stereotool_missing when the library is absent", async () => {
+    const h = harness();
+    const st = createStereoTool(
+      stConfig({ inputMode: "plugin", library: "/nonexistent/libStereoTool_intel64.so" }),
+      h.opts,
+    );
+    await st.start();
+    expect(h.alerts[0]).toMatchObject({ type: "stereotool_missing", severity: "critical" });
+    expect(h.alerts[0]!.message).toMatch(/plugin library not found/);
+    expect(st.status()).toMatchObject({ mode: "plugin", running: false, bypassed: true });
+    await st.stop();
+  });
+
+  describe.skipIf(!FAKE_LIB)("with a compiled fake library", () => {
+    const presets = mkdtempSync(join(tmpdir(), "st-presets-"));
+    const preset = join(presets, "station.sts");
+    const crash = join(presets, "crash.sts");
+    writeFileSync(preset, "[Stereo Tool]\n");
+    writeFileSync(crash, "[Stereo Tool]\n");
+
+    it("processes PCM through the library, reports version/latency and a valid licence", async () => {
+      process.env.TEST_ST_KEY = "good-key";
+      const h = harness();
+      const logs: string[] = [];
+      const st = createStereoTool(
+        stConfig({ inputMode: "plugin", library: FAKE_LIB!, preset, licenseKeyEnv: "TEST_ST_KEY" }),
+        { ...h.opts, log: (m) => logs.push(m), homeDir: join(presets, "home") },
+      ) as ProcessStereoTool;
+      st.onOutput((c) => h.out.push(c));
+      await st.start();
+      // Until the host reports ready, audio is bypassed (no startup delay on air).
+      expect(st.status().bypassed).toBe(true);
+      st.writePcm(Buffer.alloc(3840, 0));
+      expect(h.bytes()).toBe(3840);
+      h.out.length = 0;
+      await until(() => st.info !== null);
+      expect(st.status().bypassed).toBe(false);
+      const pcm = Buffer.alloc(3840);
+      for (let i = 0; i < 1920; i += 1) pcm.writeInt16LE(10_000, i * 2);
+      for (let i = 0; i < 10; i += 1) st.writePcm(pcm);
+      await until(() => h.bytes() >= 38_400);
+      const out = Buffer.concat(h.out);
+      expect(out.length).toBe(38_400); // raw PCM both ways: no WAV header in plugin mode
+      expect(out.readInt16LE(0)).toBe(5000); // the fake halves every sample
+      await until(() => st.info !== null);
+      expect(st.info).toMatchObject({
+        softwareVersion: 11080,
+        apiVersion: 256,
+        latencyMs: 10,
+        loadType: 10387,
+        valid: true,
+      });
+      expect(st.status()).toMatchObject({
+        mode: "plugin",
+        running: true,
+        edition: "v11.08 licensed",
+      });
+      expect(logs.some((l) => /plugin v11\.08 ready .*preset load type 10387/.test(l))).toBe(true);
+      expect(logs.join("\n")).not.toContain("good-key");
+      expect(h.alerts).toEqual([]);
+      await st.stop();
+      delete process.env.TEST_ST_KEY;
+    }, 15_000);
+
+    it("alerts when the licence does not cover the preset", async () => {
+      const h = harness();
+      const st = createStereoTool(
+        stConfig({
+          inputMode: "plugin",
+          library: FAKE_LIB!,
+          preset,
+          licenseKeyEnv: "TEST_ST_NO_KEY",
+        }),
+        h.opts,
+      ) as ProcessStereoTool;
+      await st.start();
+      st.writePcm(Buffer.alloc(3840));
+      await until(() => h.alerts.length > 0);
+      expect(h.alerts[0]).toMatchObject({ type: "stereotool_unlicensed", severity: "error" });
+      expect(h.alerts[0]!.message).toContain("Advanced clipper");
+      expect(st.status().edition).toBe("v11.08 unlicensed");
+      await st.stop();
+    }, 15_000);
+
+    it("isolates a crash inside the library: bypass, alert, restart", async () => {
+      const h = harness();
+      const st = createStereoTool(
+        stConfig({ inputMode: "plugin", library: FAKE_LIB!, preset: crash }),
+        h.opts,
+      ) as ProcessStereoTool;
+      st.onOutput((c) => h.out.push(c));
+      await st.start();
+      await until(() => st.info !== null);
+      st.writePcm(Buffer.alloc(3840, 1)); // Process() aborts the host
+      await until(() => !st.running);
+      st.writePcm(Buffer.alloc(3840, 2));
+      expect(h.bytes()).toBe(3840); // bypassed audio kept flowing in the worker
+      expect(h.alerts.find((a) => a.type === "stereotool_bypass")).toMatchObject({
+        severity: "critical",
+      });
+      await until(() => st.restarts >= 1, 3000);
+      expect(st.restarts).toBeGreaterThanOrEqual(1);
+      await st.stop();
+    }, 15_000);
   });
 });
