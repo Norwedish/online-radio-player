@@ -26,7 +26,16 @@
     "spike:hls": "node scripts/spike-hls.mjs",
     "spike:live-ws": "node scripts/spike-live-ws.mjs",
     "spike:live-icecast": "node scripts/spike-live-icecast.mjs",
-    "clean": "tsc -b --clean"
+    "clean": "tsc -b --clean",
+    "db:seed": "tsx scripts/cli.ts db:seed",
+    "db:backup": "tsx scripts/cli.ts db:backup",
+    "db:restore": "tsx scripts/cli.ts db:restore",
+    "user:create": "tsx scripts/cli.ts user:create",
+    "user:password": "tsx scripts/cli.ts user:password",
+    "media:scan": "tsx scripts/cli.ts media:scan",
+    "generate": "tsx scripts/cli.ts generate",
+    "preview": "tsx scripts/cli.ts preview",
+    "retention": "tsx scripts/cli.ts retention"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

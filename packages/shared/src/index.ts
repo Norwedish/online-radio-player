@@ -22,11 +22,16 @@ export type Station = z.infer<typeof stationSchema>;
 export {
   STATION_CONFIG_VERSION,
   stationConfigSchema,
-  StationConfig,
   parseStationConfig,
   formatConfigErrors,
   stationConfigCrossFieldIssues,
 } from "./config.js";
+export type { StationConfig } from "./config.js";
+
+export * from "./schedule.js";
+export * from "./protocol.js";
+export * from "./roles.js";
+export * from "./runtime.js";
 
 export const PROJECT_NAME = "online-radio-player";
 export const PROJECT_VERSION = "0.1.0";

@@ -11,9 +11,15 @@
   },
   "dependencies": {
     "@radio/core": "workspace:*",
-    "@radio/shared": "workspace:*"
+    "@radio/db": "workspace:*",
+    "@radio/shared": "workspace:*",
+    "luxon": "^3.7.2",
+    "ws": "^8.23.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/luxon": "^3.7.6",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.0.0"
   }
 }

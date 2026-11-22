@@ -20,6 +20,10 @@
     "dev": "tsc -b -w"
   },
   "dependencies": {
-    "@radio/shared": "workspace:*"
+    "@radio/shared": "workspace:*",
+    "luxon": "^3.7.2"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.6"
   }
 }

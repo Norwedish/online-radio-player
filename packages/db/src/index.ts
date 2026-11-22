@@ -30,3 +30,24 @@ export function openDatabase(file: string, options: DatabaseOptions = {}): Datab
 /** Migrations and schema metadata (M1.2) — see ./migrate.js and ./schema.js. */
 export { defaultMigrationsFolder, runMigrations, type MigrationReport } from "./migrate.js";
 export { SCHEMA_TABLE_NAMES } from "./schema.js";
+
+/** M1.3–M1.6: repositories, seed, crypto, backup/restore, retention. */
+export * from "./repos/index.js";
+export {
+  seedDatabase,
+  DEFAULT_RUNTIME_SETTINGS,
+  type SeedOptions,
+  type SeedReport,
+} from "./seed.js";
+export { hashPassword, verifyPassword, randomToken, sha256, safeEqual } from "./crypto.js";
+export {
+  backupDatabase,
+  restoreDatabase,
+  rotateBackups,
+  listBackupFiles,
+  verifyDatabaseFile,
+  type BackupResult,
+} from "./backup.js";
+export { runRetention, type RetentionPolicy, type RetentionReport } from "./retention.js";
+export { nowIso, fromJson, toJson } from "./util.js";
+export type { Database };
