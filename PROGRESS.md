@@ -1,7 +1,7 @@
 # Execution Progress
 
 **Plan:** [`PLAN.md`](./PLAN.md)  
-**Last updated:** 2026-11-21  
+**Last updated:** 2026-11-22  
 **Current milestone:** M0 — Foundations and technical spikes
 
 > Rule: do not start the next milestone until the current one's acceptance criteria pass. Update this file after every task.
@@ -32,11 +32,11 @@
 - [x] **M0.1 Scaffold monorepo** — pnpm workspace, TypeScript project references, ESLint, Prettier, Vitest.
 - [x] **M0.2 Repo skeleton** — `apps/api`, `apps/playout`, `apps/web`, `packages/core`, `packages/db`, `packages/shared`, config/scripts/docs.
 - [x] **M0.3 Dev environment** — dev scripts, Icecast compose file, mock Stereo Tool, example configs.
-- [ ] **M0.4 Spike: FFmpeg PCM chain** — tone → PCM → mock ST → MP3 → Icecast; measure latency/CPU.
+- [x] **M0.4 Spike: FFmpeg PCM chain** — chain verified (ADR 0001, **Accepted**): mount open in 102 ms / visible 267–464 ms, listener first byte 117–177 ms, MP3 320 k verified by `ffprobe`, capture decodes clean. Key finding: pipe-fed encoders need `-analyzeduration 0 -probesize 32768` (defaults cost 3.7 s). 10-minute soak recorded in `data/fixtures/spike-soak-600.json`.
 - [ ] **M0.5 Spike: Thimeo Stereo Tool CLI** — determine continuous PCM stdin/stdout method; edition/license/preset checks.
 - [ ] **M0.6 Spike: Icecast HLS** — configure and verify native HLS; measure latency.
 - [ ] **M0.7 Spike: live transport** — LiveKit vs WebSocket Opus vs external Icecast ingest; measure glass-to-air.
-- [ ] **M0.8 Spike: SQLite concurrency** — WAL, single writer + reader, backup while reading.
+- [x] **M0.8 Spike: SQLite concurrency** - WAL verified (ADR 0005, **Accepted**): 1500 inserts at 50/s with 0 `SQLITE_BUSY` retries across 1 writer + 2 readonly readers, `db.backup()` ok mid-load, WAL ~4.1 MB.
 - [ ] **M0.9 ADRs complete** — record context/decision/consequences for each spike.
 - [ ] **M0.10 Walking skeleton** — `/api/health`, worker heartbeat, `/listen` placeholder plays a tone.
 
@@ -223,6 +223,12 @@
 | 2026-11-21 | `pnpm config:validate` | ✅ | Example config valid |
 | 2026-11-21 | runtime smoke | ✅ | API `/api/health` returns ok; worker starts and heartbeats |
 | 2026-11-21 | `pnpm dev` smoke | ✅ | API health ok; Vite serves `/` with HTTP 200; worker heartbeat |
+| 2026-11-21 | `docker compose up` (dev Icecast) | ✅ | Icecast 2.4.4, `status-json.xsl` responds, mounts `/hq.mp3` `/mobile.mp3` `/opus.ogg` `/aac.aac` |
+| 2026-11-21 | `node scripts/spike-ffmpeg-chain.mjs` (20 s, `/hq.mp3`) | ✅ | open 102 ms · mount 464 ms · first byte 117 ms · 320 053 bps · capture decodes exit 0 |
+| 2026-11-21 | same chain, FFmpeg default probing (untuned) | ⚠️ | mount 3.8–4.0 s: encoder spends 3.76 s analyzing a real-time PCM pipe → fixed by `-analyzeduration 0 -probesize 32768` |
+| 2026-11-21 | `node scripts/make-fixtures.mjs -f` | ✅ | `tone.wav` 60 s / `music.wav` 90 s, both `pcm_s16le` 48 000 Hz 2 ch |
+| 2026-11-22 | `node scripts/spike-ffmpeg-chain.mjs data/fixtures/music.wav 600 hq.mp3` | ✅ | 10-minute soak: 118 mount polls, 0 missing, 11.42 s CPU total (0.019 cores), all stages exit 0 (`data/fixtures/spike-soak-600.json`) |
+| 2026-11-22 | `pnpm spike:sqlite 30 50` | ✅ | journal_mode `wal`; 1500 inserts @ 50/s; 0 busy retries (writer + 2 readers); avg write 0.111 ms; backup mid-load ok; readers readonly, max read 1 ms; WAL 4.13 MB (`data/spike/sqlite/spike-result.json`) |
 
 ## Blockers / open decisions
 
@@ -231,9 +237,13 @@
 - Live transport choice — M0.7 spike.
 - Domain, SMTP, webhook endpoints, station branding — placeholders until deployment.
 - Emergency loop file — user-provided; validate at install/startup.
+- Dev-host caveat: FFmpeg here is a Scoop shim, so exit codes and CPU counters are unreliable
+  (see ADR 0001). All CPU/latency sizing must be re-measured on the Debian 13 / 2 vCPU target.
 
 ## Next up
 
-1. **M0.4** — FFmpeg PCM chain spike with the mock Stereo Tool and Icecast.
-2. **M0.5** — Thimeo Stereo Tool CLI spike (requires the licensed binary/preset).
-3. **M0.6** — Icecast HLS spike.
+1. **M0.6** — Icecast HLS spike on the dev container; record the 2.4.4 vs 2.5/2.6 delta.
+2. **M0.7** — live transport spike (LiveKit vs WebSocket Opus vs Icecast ingest).
+3. **M0.5** — Thimeo Stereo Tool CLI spike; **blocked** until the licensed binary/preset is on a Linux host.
+4. **M0.9** — finish the ADR set (0002/0003/0004 after their spikes; re-measure CPU on the Debian 13 target).
+5. **M0.10** — walking skeleton: `/listen` plays the tone end to end.

@@ -19,6 +19,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "config:validate": "tsx scripts/validate-config.ts",
+    "spike:chain": "node scripts/spike-ffmpeg-chain.mjs",
+    "spike:fixtures": "node scripts/make-fixtures.mjs",
+    "spike:sqlite": "node scripts/spike-sqlite-wal.mjs",
     "clean": "tsc -b --clean"
   },
   "devDependencies": {

@@ -30,4 +30,11 @@ process.stdout.on("error", (error) => {
   process.exit(1);
 });
 
+process.on("exit", () => {
+  const usage = process.cpuUsage();
+  console.error(
+    `bench: utime=${(usage.user / 1e6).toFixed(6)}s stime=${(usage.system / 1e6).toFixed(6)}s rtime=${process.uptime().toFixed(6)}s`,
+  );
+});
+
 console.error("mock-stereotool: passthrough ready");
