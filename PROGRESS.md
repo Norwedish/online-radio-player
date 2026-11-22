@@ -35,7 +35,7 @@
 - [x] **M0.4 Spike: FFmpeg PCM chain** — chain verified (ADR 0001, **Accepted**): mount open in 102 ms / visible 267–464 ms, listener first byte 117–177 ms, MP3 320 k verified by `ffprobe`, capture decodes clean. Key finding: pipe-fed encoders need `-analyzeduration 0 -probesize 32768` (defaults cost 3.7 s). 10-minute soak recorded in `data/fixtures/spike-soak-600.json`.
 - [ ] **M0.5 Spike: Thimeo Stereo Tool CLI** — determine continuous PCM stdin/stdout method; edition/license/preset checks.
 - [x] **M0.6 Spike: Icecast HLS** - upstream Icecast 2.5.0 has **no HLS** (verified: release notes, docs, 2.6 milestone). Fallback implemented and measured (ADR 0003, **Accepted**): FFmpeg AAC 96k HLS (2 s segments, 6-segment live window) served by nginx; Chrome + hls.js plays at 2.1 s / 4.1 s / ~14 s latency depending on `liveSyncDurationCount` (1/2/3); nginx headers correct. Firefox/Safari pending a staging host.
-- [ ] **M0.7 Spike: live transport** — LiveKit vs WebSocket Opus vs external Icecast ingest; measure glass-to-air.
+- [x] **M0.7 Spike: live transport** - browser studio = **WebSocket PCM** (ADR 0004, **Accepted**): 936 frames/20 s, avg arrival 0.89 ms, p95 1.7 ms, jitter 2.03 ms, 0 sequence gaps, 772.9 kbps mono; external DJs = **Icecast `/live` ingest** (15/15 marker bursts, median 47 ms source->listener). LiveKit deferred (extra SFU on 2 vCPU); documented as the upgrade path.
 - [x] **M0.8 Spike: SQLite concurrency** - WAL verified (ADR 0005, **Accepted**): 1500 inserts at 50/s with 0 `SQLITE_BUSY` retries across 1 writer + 2 readonly readers, `db.backup()` ok mid-load, WAL ~4.1 MB.
 - [ ] **M0.9 ADRs complete** — record context/decision/consequences for each spike.
 - [ ] **M0.10 Walking skeleton** — `/api/health`, worker heartbeat, `/listen` placeholder plays a tone.
@@ -232,6 +232,8 @@
 | 2026-11-22 | Icecast HLS capability check | ℹ️ | dev container is Icecast 2.4.4; upstream 2.5.0 release notes, latest config docs and the 2.6 milestone contain **no HLS** |
 | 2026-11-22 | `pnpm spike:hls data/fixtures/music.wav 30` | ✅ | playlist at 1.55 s; 2.005 s AAC segments; 6-segment live window; nginx 200 `application/vnd.apple.mpegurl` (no-store) and `video/mp2t` (max-age=60) (`data/spike/hls/spike-result.json`) |
 | 2026-11-22 | Chrome + hls.js live HLS playback | ✅ | latency 2.1 s (`liveSyncDurationCount: 1`), 4.1 s (2), 8-14 s (default 3); no console errors |
+| 2026-11-22 | `pnpm spike:live-ws 20` (Chrome uplink) | ✅ | 936 frames; arrival avg 0.89 ms, p95 1.7 ms; jitter 2.03 ms; 0 sequence gaps; 772.9 kbps mono; 0.124 s server CPU |
+| 2026-11-22 | `pnpm spike:live-icecast 30` | ✅ | 15/15 marker bursts matched; source->listener avg 76.9 ms, p50 47 ms, p95 124 ms; startup burst 672 ms |
 
 ## Blockers / open decisions
 
@@ -245,7 +247,6 @@
 
 ## Next up
 
-1. **M0.7** — live transport spike (LiveKit vs WebSocket Opus vs Icecast ingest).
-2. **M0.5** — Thimeo Stereo Tool CLI spike; **blocked** until the licensed binary/preset is on a Linux host.
-3. **M0.9** — finish the ADR set (0002/0004 after their spikes; re-measure CPU on the Debian 13 target; Firefox/Safari HLS smoke test).
-4. **M0.10** — walking skeleton: `/listen` plays the tone end to end.
+1. **M0.5** — Thimeo Stereo Tool CLI spike; **blocked** until the licensed binary/preset is on a Linux host.
+2. **M0.9** — finish the ADR set (0002 after M0.5; re-measure CPU on the Debian 13 target; Firefox/Safari HLS smoke test).
+3. **M0.10** — walking skeleton: `/listen` plays the tone end to end.

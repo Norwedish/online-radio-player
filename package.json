@@ -23,6 +23,8 @@
     "spike:fixtures": "node scripts/make-fixtures.mjs",
     "spike:sqlite": "node scripts/spike-sqlite-wal.mjs",
     "spike:hls": "node scripts/spike-hls.mjs",
+    "spike:live-ws": "node scripts/spike-live-ws.mjs",
+    "spike:live-icecast": "node scripts/spike-live-icecast.mjs",
     "clean": "tsc -b --clean"
   },
   "devDependencies": {
@@ -34,6 +36,7 @@
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "ws": "^8.23.0"
   }
 }

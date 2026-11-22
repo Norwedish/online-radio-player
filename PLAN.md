@@ -1156,6 +1156,10 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - Measure glass-to-air latency and CPU on a 2 vCPU VM/container.
   - Write `docs/adr/0004-live-transport.md`.
   - **Verify:** a decision with measured numbers; a working demo of the chosen transport.
+  - **Result (2026-11-22):** browser studio = **WebSocket PCM** (measured 0.89 ms avg
+    arrival, 2 ms jitter, 0 gaps, ~773 kbps mono), external DJs = **Icecast ingest**
+    (measured 47 ms median source->listener). LiveKit deferred (extra SFU on a
+    2 vCPU host). ADR 0004.
 - [ ] **M0.8 Spike: SQLite concurrency**
   - Test WAL + `better-sqlite3`/Drizzle with one writer (API) and one reader (worker) under load.
   - Write `docs/adr/0005-sqlite-wal.md`.
