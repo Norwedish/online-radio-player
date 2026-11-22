@@ -58,6 +58,9 @@ Ship HLS as an **FFmpeg-packaged, nginx-served** output alongside the ICY mounts
   stall, lower to 1 only for special low-latency use (~2 s, less buffer).
 - HLS is optional (config flag). The primary listening path stays the
   progressive MP3/Opus mounts; HLS is for Apple/background and CDN scenarios.
+- **Owner confirmation (2026-11-22):** after learning that upstream Icecast has no HLS,
+  the decision is confirmed — HLS stays in v1 **behind a config flag**, off by default,
+  with MP3/Opus as the primary path.
 
 ## Consequences
 

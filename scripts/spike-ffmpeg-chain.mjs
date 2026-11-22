@@ -197,7 +197,10 @@ function probe(file) {
     );
     const duration = /duration=([\d.]+)/.exec(out)?.[1];
     const bitRate = /bit_rate=(\d+)/.exec(out)?.[1];
-    return { duration: duration ? Number(duration) : null, bitRate: bitRate ? Number(bitRate) : null };
+    return {
+      duration: duration ? Number(duration) : null,
+      bitRate: bitRate ? Number(bitRate) : null,
+    };
   } catch {
     return { duration: null, bitRate: null };
   }
@@ -230,11 +233,12 @@ const decoderArgs = [
 
 const decoder = spawnChild("decoder", "ffmpeg", decoderArgs, ["ignore", "pipe", "pipe"]);
 
-const stereoTool = spawnChild("mock-stereotool", process.execPath, ["scripts/mock-stereotool.mjs"], [
-  "pipe",
-  "pipe",
-  "pipe",
-]);
+const stereoTool = spawnChild(
+  "mock-stereotool",
+  process.execPath,
+  ["scripts/mock-stereotool.mjs"],
+  ["pipe", "pipe", "pipe"],
+);
 
 const encoder = spawnChild(
   "encoder",

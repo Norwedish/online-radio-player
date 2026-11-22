@@ -73,15 +73,15 @@ tests/        Unit, integration, e2e (added as milestones progress)
 
 ## Scripts
 
-| Command | Purpose |
-|---|---|
-| `pnpm dev` | Build packages and start API + playout + web dev servers |
-| `pnpm build` | Build all TypeScript packages and the web app |
-| `pnpm typecheck` | Typecheck all packages and the web app |
-| `pnpm lint` | ESLint |
-| `pnpm test` | Vitest |
-| `pnpm config:validate` | Validate `config/station.example.json` |
-| `pnpm format` | Prettier write |
+| Command                | Purpose                                                  |
+| ---------------------- | -------------------------------------------------------- |
+| `pnpm dev`             | Build packages and start API + playout + web dev servers |
+| `pnpm build`           | Build all TypeScript packages and the web app            |
+| `pnpm typecheck`       | Typecheck all packages and the web app                   |
+| `pnpm lint`            | ESLint                                                   |
+| `pnpm test`            | Vitest                                                   |
+| `pnpm config:validate` | Validate `config/station.example.json`                   |
+| `pnpm format`          | Prettier write                                           |
 
 ## Configuration and secrets
 

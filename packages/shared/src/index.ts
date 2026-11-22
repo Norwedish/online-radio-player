@@ -18,5 +18,15 @@ export const stationSchema = z.object({
 
 export type Station = z.infer<typeof stationSchema>;
 
+/** Station configuration (M1.1) — see ./config.ts for the full Zod schema. */
+export {
+  STATION_CONFIG_VERSION,
+  stationConfigSchema,
+  StationConfig,
+  parseStationConfig,
+  formatConfigErrors,
+  stationConfigCrossFieldIssues,
+} from "./config.js";
+
 export const PROJECT_NAME = "online-radio-player";
 export const PROJECT_VERSION = "0.1.0";

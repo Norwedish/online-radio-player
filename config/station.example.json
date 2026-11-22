@@ -1,9 +1,11 @@
 {
+  "configVersion": 1,
   "station": {
     "id": 1,
-    "name": "STATION_NAME",
+    "name": "Example Station Radio",
     "timezone": "Europe/Amsterdam",
     "locale": "en",
+    "domain": "radio.example.com",
     "logoUrl": "/branding/logo.png",
     "colors": { "primary": "#22c55e", "background": "#0b0f0e" }
   },
@@ -25,6 +27,7 @@
     "binary": "/opt/stereotool/stereotool_cmd",
     "preset": "/etc/radio/stereotool.sds",
     "license": "/opt/stereotool/stereotool.lic",
+    "edition": "live",
     "inputMode": "stdio-pcm",
     "restart": { "maxAttempts": 5, "backoffMs": 2000 },
     "bypassOnFailure": true
@@ -35,13 +38,60 @@
     "sourcePasswordEnv": "ICECAST_SOURCE_PASSWORD",
     "adminUser": "admin",
     "adminPasswordEnv": "ICECAST_ADMIN_PASSWORD",
+    "liveMount": "/live",
+    "livePasswordEnv": "ICECAST_LIVE_PASSWORD",
     "mounts": [
-      { "name": "hq.mp3", "codec": "mp3", "bitrate": "320k", "public": true },
-      { "name": "mobile.mp3", "codec": "mp3", "bitrate": "128k", "public": true },
-      { "name": "opus.ogg", "codec": "opus", "bitrate": "96k", "public": true },
-      { "name": "aac.aac", "codec": "aac", "bitrate": "96k", "public": true }
+      {
+        "name": "hq.mp3",
+        "codec": "mp3",
+        "bitrate": "320k",
+        "contentType": "audio/mpeg",
+        "public": true,
+        "primary": true
+      },
+      {
+        "name": "mobile.mp3",
+        "codec": "mp3",
+        "bitrate": "128k",
+        "contentType": "audio/mpeg",
+        "public": true
+      },
+      {
+        "name": "opus.ogg",
+        "codec": "opus",
+        "bitrate": "96k",
+        "contentType": "audio/ogg",
+        "public": true
+      },
+      {
+        "name": "aac.aac",
+        "codec": "aac",
+        "bitrate": "96k",
+        "contentType": "audio/aac",
+        "public": true
+      }
     ],
-    "hls": { "enabled": true, "mount": "/hls" }
+    "hls": {
+      "enabled": false,
+      "mount": "/hls",
+      "segmentSeconds": 2,
+      "listSize": 6,
+      "codec": "aac",
+      "bitrate": "96k",
+      "nginxServer": "radio-hls"
+    }
+  },
+  "media": {
+    "root": "/srv/radio/media",
+    "nasPaths": [
+      { "id": "nas-main", "mountPath": "/mnt/nas-music", "relativePath": "/", "enabled": true }
+    ],
+    "watchFolder": "/srv/radio/media/incoming",
+    "scanIntervalSeconds": 300,
+    "maxScanFiles": 100000,
+    "artworkDir": "/srv/radio/artwork",
+    "extensions": [".mp3", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wav"],
+    "metadataLookup": { "musicbrainz": true, "rateLimitPerMinute": 1 }
   },
   "scheduler": {
     "generator": {
@@ -54,11 +104,14 @@
       "overrunAllowedSeconds": 90,
       "tailWindowSeconds": 300,
       "tailOverrunSeconds": 45,
-      "newsReserveSeconds": 180
+      "newsReserveSeconds": 180,
+      "fallbackPlaylistName": "General",
+      "decadePrefixes": ["00s", "10s", "20s", "30s", "40s", "50s", "60s", "70s", "80s", "90s"]
     },
     "news": {
-      "hour": "Nieuws/nieuws-heel-uur.mp3",
-      "half": "Nieuws/nieuws-half-uur.mp3"
+      "fullHourFile": "/Nieuws/nieuws-heel-uur.mp3",
+      "halfHourFile": "/Nieuws/nieuws-half-uur.mp3",
+      "lockedMinutes": [0, 30]
     },
     "live": {
       "maxConcurrent": 1,
@@ -66,37 +119,82 @@
       "duckAttackMs": 50,
       "duckReleaseMs": 500,
       "noShowGraceSeconds": 120,
-      "noShowFallbackPlaylistId": null
+      "noShowFallbackPlaylistName": null,
+      "studio": { "jitterBufferMs": 200, "channels": 2, "maxSessionMinutes": 180 }
     }
   },
   "requests": {
+    "enabled": true,
     "autoApprove": false,
+    "blacklistPatterns": [],
     "cooldownMinutes": 60,
     "maxPerHour": 3,
+    "maxPerIpPerDay": 10,
     "profanityFilter": true,
-    "dedications": true
+    "dedications": true,
+    "maxLengthCharacters": 500
   },
   "retention": {
     "historyDays": 90,
     "logsDays": 30,
     "requestsDays": 30,
-    "recordingsDays": 30
+    "recordingsDays": 30,
+    "hlsSegments": 6
   },
   "backups": {
     "dir": "/srv/radio/backups",
     "dailyKeep": 14,
-    "weeklyKeep": 8
+    "weeklyKeep": 8,
+    "minFreeDiskB": 500000000
   },
   "email": {
     "smtpHost": "smtp.example.com",
     "smtpPort": 587,
-    "from": "radio@example.com"
+    "smtpSecure": true,
+    "from": "radio@example.com",
+    "authUserEnv": "SMTP_USER",
+    "authPasswordEnv": "SMTP_PASSWORD",
+    "resetSubject": "Radio station password reset"
   },
   "webhooks": {
     "alerts": []
   },
+  "alerts": {
+    "inApp": true,
+    "email": true,
+    "emailTo": [],
+    "syslogTag": "radio-player",
+    "prometheusEnabled": true,
+    "dedupeSeconds": 300
+  },
   "metrics": {
     "enabled": true,
-    "path": "/metrics"
+    "path": "/metrics",
+    "listenerSampleSeconds": 30
+  },
+  "users": {
+    "bootstrapAdminUserEnv": "ADMIN_USERNAME",
+    "bootstrapAdminPasswordEnv": "ADMIN_PASSWORD",
+    "totpAllowed": true,
+    "sessionHours": 12,
+    "emailResetEnabled": true,
+    "passwordMinLength": 12
+  },
+  "web": {
+    "publicBaseUrl": "https://radio.example.com/listen",
+    "adminPath": "/admin",
+    "listenPath": "/listen",
+    "studioPath": "/studio",
+    "cspAllowHlsFrom": []
+  },
+  "worker": {
+    "heartbeatMs": 10000,
+    "protocolPort": 3101,
+    "logDir": "/srv/radio/logs",
+    "keepWorkersAliveSeconds": 30
+  },
+  "db": {
+    "file": "/srv/radio/var/radio.sqlite",
+    "backupDir": "/srv/radio/backups"
   }
 }

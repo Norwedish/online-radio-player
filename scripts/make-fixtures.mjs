@@ -68,12 +68,16 @@ const run = (command, args) => {
     throw new Error(`spawn ${command} failed: ${result.error.code ?? result.error.message}`);
   }
   if (result.exitCode !== 0 && result.exitCode !== undefined) {
-    throw new Error(`${command} failed (exit ${result.exitCode} signal ${result.signal ?? "none"}): ${args.join(" ")}`);
+    throw new Error(
+      `${command} failed (exit ${result.exitCode} signal ${result.signal ?? "none"}): ${args.join(" ")}`,
+    );
   }
   if (result.exitCode === undefined) {
     // Scoop/Chocolatey shims on Windows dev hosts launch the real binary as a child
     // process, so Node cannot recover its exit code. Callers must verify the artifact.
-    console.warn(`[fixtures] ${command} exit code unavailable on this host (shim); verifying output instead`);
+    console.warn(
+      `[fixtures] ${command} exit code unavailable on this host (shim); verifying output instead`,
+    );
   }
 };
 
@@ -113,7 +117,9 @@ for (const fixture of fixtures) {
     throw new Error(`ffprobe failed for ${fixture.file} (exit ${probed.exitCode})`);
   }
   if (probed.exitCode === undefined) {
-    console.warn(`[fixtures] ffprobe exit code unavailable on this host (shim); checking stdout instead`);
+    console.warn(
+      `[fixtures] ffprobe exit code unavailable on this host (shim); checking stdout instead`,
+    );
   }
 
   const rate = /sample_rate=(\d+)/.exec(String(probed.stdout))?.[1];
@@ -128,7 +134,9 @@ for (const fixture of fixtures) {
 
   const actual = duration ? Number(duration) : Number.NaN;
   if (!(Math.abs(actual - fixture.duration) < 1)) {
-    throw new Error(`${fixture.file} duration ${actual}s does not match expected ${fixture.duration}s`);
+    throw new Error(
+      `${fixture.file} duration ${actual}s does not match expected ${fixture.duration}s`,
+    );
   }
 
   console.log(`[fixtures] ok ${fixture.file}: pcm_s16le 48000 Hz 2 ch, ${actual}s`);

@@ -1198,11 +1198,25 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
 
 **Depends:** M0.
 
-- [ ] **M1.1 Configuration schema**
+- [x] **M1.1 Configuration schema**
   - Files: `packages/shared/src/config.ts`, `config/station.example.json`.
   - Zod schema for station, audio, stereotool, icecast, scheduler, live, requests, retention, backups, email, webhooks.
   - `config:validate` CLI.
   - **Verify:** valid config passes; each invalid field produces a precise error.
+  - **Result (2026-11-22):** implemented and passing. `stationConfigSchema` (zod 3, pinned `^3.24.0`) covers
+    station / audio / stereotool / icecast(+mounts+hls) / media / scheduler(generator, news, live) / requests /
+    retention / backups / email / webhooks / alerts / metrics / users / web / worker / db, with
+    `.strict()` objects and defaults for every optional key. `parseStationConfig` returns
+    `{ok:true, config}` or `{ok:false, errors[]}`; `formatConfigErrors` prints `config.path.to.key: message (rule)`.
+    Cross-field rules that zod 3 cannot express run after structural parsing:
+    exactly one `primary` mount, `contentType` ↔ codec per ADR 0001 (`mp3→audio/mpeg`, `opus→audio/ogg`,
+    `aac→audio/aac`), mount extension ↔ codec, unique mount/nas/webhook ids, `backups.dir == db.backupDir`,
+    `icecast.port != worker.protocolPort`, `hourMinSeconds <= hourMaxSeconds`.
+    Secrets stay out of the JSON: every `*Env` key is validated as an env-var NAME
+    (`^[A-Z][A-Z0-9_]{2,}$`), and the CLI lists them plus a warning when they are not in the shell.
+    HLS defaults **off** (ADR 0003 owner confirmation). Verified: example config OK (exit 0); a
+    deliberately broken config produced 7 precise structural errors; a structurally valid config
+    produced 6 cross-field problems; 5 new vitest cases in `packages/shared/src/config.test.ts`.
 - [ ] **M1.2 Database schema**
   - Files: `packages/db/src/schema.ts`, `packages/db/drizzle/`.
   - All tables from §6.3; indexes; constraints; `generator_runs`.
