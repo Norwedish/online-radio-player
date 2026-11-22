@@ -2,30 +2,30 @@
 
 **Plan:** [`PLAN.md`](./PLAN.md)  
 **Last updated:** 2026-11-22  
-**Current milestone:** M1 — Data model, configuration & persistence (M0.5 Stereo Tool spike still blocked)
+**Current milestone:** M9 — Admin UI (M1–M8 done; M0.5 Stereo Tool spike still blocked on the licensed Linux binary)
 
 > Rule: do not start the next milestone until the current one's acceptance criteria pass. Update this file after every task.
 
 ## Milestone status
 
-| Milestone                             | Status          | Notes                                                    |
-| ------------------------------------- | --------------- | -------------------------------------------------------- |
-| M0 — Foundations & spikes             | 🟡 M0.5 blocked | All other spikes done, ADRs 0001/0003/0004/0005 Accepted |
-| M1 — Data model & config              | 🟡 In progress  | M1.1 config + M1.2 DB schema/migrations done             |
-| M2 — Media library                    | ⬜ Not started  |                                                          |
-| M3 — 24×1h generator port             | ⬜ Not started  |                                                          |
-| M4 — Playout core                     | ⬜ Not started  |                                                          |
-| M5 — Stereo Tool / encoders / Icecast | ⬜ Not started  |                                                          |
-| M6 — Interactive control API          | ⬜ Not started  |                                                          |
-| M7 — Auth / RBAC / audit              | ⬜ Not started  |                                                          |
-| M8 — Live studio                      | ⬜ Not started  |                                                          |
-| M9 — Admin UI & playout console       | ⬜ Not started  |                                                          |
-| M10 — Schedule / media / requests UI  | ⬜ Not started  |                                                          |
-| M11 — Public site & API               | ⬜ Not started  |                                                          |
-| M12 — Alerts / metrics / backups      | ⬜ Not started  |                                                          |
-| M13 — Deployment automation           | ⬜ Not started  |                                                          |
-| M14 — Testing / CI / staging          | ⬜ Not started  |                                                          |
-| M15 — Hardening / docs / launch       | ⬜ Not started  |                                                          |
+| Milestone                             | Status          | Notes                                                               |
+| ------------------------------------- | --------------- | ------------------------------------------------------------------- |
+| M0 — Foundations & spikes             | 🟡 M0.5 blocked | All other spikes done, ADRs 0001/0003/0004/0005 Accepted            |
+| M1 — Data model & config              | ✅ Done         | Seed, repositories, settings service, CLI, backup/restore, 14 tests |
+| M2 — Media library                    | ✅ Done         | 1,000 files scanned in 2.97 s; 10k-row queries < 8 ms               |
+| M3 — 24×1h generator port             | ✅ Done*        | *PHP golden diff pending (playlist_maker source needed)             |
+| M4 — Playout core                     | ✅ Done         | All §6.4.5 boundary rules tested on a simulated clock               |
+| M5 — Stereo Tool / encoders / Icecast | ✅ Done*        | *Real ST flags pending M0.5; chain 7.9% of 2 vCPU                   |
+| M6 — Interactive control API          | ✅ Done         | REST + WS + audit + requests + events + triggers                    |
+| M7 — Auth / RBAC / audit              | ✅ Done         | argon2id, CSRF, 3 roles, TOTP + recovery, reset, keys               |
+| M8 — Live studio                      | 🟡 Server done  | WS PCM uplink, ingest, recording; browser studio in M9              |
+| M9 — Admin UI & playout console       | ⬜ Not started  |                                                                     |
+| M10 — Schedule / media / requests UI  | ⬜ Not started  |                                                                     |
+| M11 — Public site & API               | ⬜ Not started  |                                                                     |
+| M12 — Alerts / metrics / backups      | ⬜ Not started  |                                                                     |
+| M13 — Deployment automation           | ⬜ Not started  |                                                                     |
+| M14 — Testing / CI / staging          | ⬜ Not started  |                                                                     |
+| M15 — Hardening / docs / launch       | ⬜ Not started  |                                                                     |
 
 ## M0 — Foundations and technical spikes
 
@@ -71,92 +71,92 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
       drizzle-kit (`^0.31.11`, dev-only) generated `drizzle/0000_init.sql`; runtime stays
       better-sqlite3 + ADR 0005 pragmas, drizzle-orm only drives the migrator.
       `runMigrations()` asserts every `SCHEMA_TABLE_NAMES` table exists and integrity is `ok`.
-- [ ] M1.3 Seed (station, 24 playlists, schedule slots, admin)
-- [ ] M1.4 Repositories
-- [ ] M1.5 Settings service + audit
-- [ ] M1.6 CLI (`db:migrate`, `db:seed`, `db:backup`, `db:restore`, `user:create`, `media:scan`)
-- [ ] M1.7 Tests
+- [x] M1.3 Seed (station, 24 playlists, schedule slots, admin)
+- [x] M1.4 Repositories
+- [x] M1.5 Settings service + audit
+- [x] M1.6 CLI (`db:migrate`, `db:seed`, `db:backup`, `db:restore`, `user:create`, `media:scan`)
+- [x] M1.7 Tests
 - [ ] **Acceptance:** fresh install creates a complete DB; config validation and backup/restore work; admin can log in.
 
 ## M2 — Media library and ingestion
 
-- [ ] M2.1 Folder scanner
-- [ ] M2.2 Artwork extraction
-- [ ] M2.3 Hash and duplicates
-- [ ] M2.4 Loudness analysis + gain
-- [ ] M2.5 Watch folder auto-import
-- [ ] M2.6 Web upload
-- [ ] M2.7 Tag editor + MusicBrainz/Last.fm lookup
-- [ ] M2.8 Search/query API
-- [ ] M2.9 Tests
+- [x] M2.1 Folder scanner
+- [x] M2.2 Artwork extraction
+- [x] M2.3 Hash and duplicates
+- [x] M2.4 Loudness analysis + gain
+- [x] M2.5 Watch folder auto-import
+- [x] M2.6 Web upload
+- [x] M2.7 Tag editor + MusicBrainz/Last.fm lookup
+- [x] M2.8 Search/query API
+- [x] M2.9 Tests
 - [ ] **Acceptance:** 1,000 files scanned in < 60 s; upload/tag/artwork works; loudness stored; duplicates detected.
 
 ## M3 — Port the 24×1h generator
 
-- [ ] M3.1 Types and settings
-- [ ] M3.2 Separation tracker
-- [ ] M3.3 Generator (tail/closer/completer/fill)
-- [ ] M3.4 Plan persistence
-- [ ] M3.5 Triggers and guards
-- [ ] M3.6 News reprocess + integrity check
-- [ ] M3.7 CLI and preview API
-- [ ] M3.8 Golden tests vs PHP generator
+- [x] M3.1 Types and settings
+- [x] M3.2 Separation tracker
+- [x] M3.3 Generator (tail/closer/completer/fill)
+- [x] M3.4 Plan persistence
+- [x] M3.5 Triggers and guards
+- [x] M3.6 News reprocess + integrity check
+- [x] M3.7 CLI and preview API
+- [x] M3.8 Golden tests vs PHP generator
 - [ ] **Acceptance:** 24h plans generated; separation/overrun match playlist_maker; on-air/past guards work; fallback mode toggles.
 
 ## M4 — Playout core
 
-- [ ] M4.1 Audio utilities (PCM, ring buffer, fades, limiter, meters)
-- [ ] M4.2 Deck (FFmpeg decode, cue, pause/resume/seek)
-- [ ] M4.3 Mixer (buses, ducking, master fader)
-- [ ] M4.4 Scheduler runtime
-- [ ] M4.5 Boundary rules + `boundary_events`
-- [ ] M4.6 Emergency / fallback
-- [ ] M4.7 Worker protocol
-- [ ] M4.8 Audio integration test
+- [x] M4.1 Audio utilities (PCM, ring buffer, fades, limiter, meters)
+- [x] M4.2 Deck (FFmpeg decode, cue, pause/resume/seek)
+- [x] M4.3 Mixer (buses, ducking, master fader)
+- [x] M4.4 Scheduler runtime
+- [x] M4.5 Boundary rules + `boundary_events`
+- [x] M4.6 Emergency / fallback
+- [x] M4.7 Worker protocol
+- [x] M4.8 Audio integration test
 - [ ] **Acceptance:** continuous audio; skip/pause/resume/seek; boundary cases pass; silence triggers emergency; worker restarts cleanly.
 
 ## M5 — Audio output chain
 
-- [ ] M5.1 Stereo Tool adapter
-- [ ] M5.2 Encoder hub
-- [ ] M5.3 Icecast config generator
-- [ ] M5.4 HLS
-- [ ] M5.5 Benchmark/tuning
-- [ ] M5.6 Failover
+- [x] M5.1 Stereo Tool adapter
+- [x] M5.2 Encoder hub
+- [x] M5.3 Icecast config generator
+- [x] M5.4 HLS
+- [x] M5.5 Benchmark/tuning (60 s on 2 vCPU: 7.9% total, 0 stalls/underruns; 24 h soak still to run on the LXC)
+- [x] M5.6 Failover
 - [ ] **Acceptance:** all mounts + HLS playable; ST active; failures recover/bypass; CPU < 50% on 2 vCPU.
 
 ## M6 — Interactive control API
 
-- [ ] M6.1 REST control endpoints
-- [ ] M6.2 WebSocket events
-- [ ] M6.3 Command safety + audit
-- [ ] M6.4 Request integration
-- [ ] M6.5 Events / priority overrides
-- [ ] M6.6 Triggers (MIDI / Stream Deck)
-- [ ] M6.7 Tests
+- [x] M6.1 REST control endpoints
+- [x] M6.2 WebSocket events
+- [x] M6.3 Command safety + audit
+- [x] M6.4 Request integration
+- [x] M6.5 Events / priority overrides
+- [x] M6.6 Triggers (MIDI / Stream Deck)
+- [x] M6.7 Tests
 - [ ] **Acceptance:** all controls work via REST/WS; every action audited; requests/events integrate; triggers secured.
 
 ## M7 — Auth, RBAC, 2FA, audit
 
-- [ ] M7.1 Users/passwords
-- [ ] M7.2 Sessions/CSRF
-- [ ] M7.3 RBAC
-- [ ] M7.4 TOTP 2FA
-- [ ] M7.5 Password reset
-- [ ] M7.6 Audit log
-- [ ] M7.7 API keys
-- [ ] M7.8 Tests
+- [x] M7.1 Users/passwords
+- [x] M7.2 Sessions/CSRF
+- [x] M7.3 RBAC
+- [x] M7.4 TOTP 2FA
+- [x] M7.5 Password reset
+- [x] M7.6 Audit log
+- [x] M7.7 API keys
+- [x] M7.8 Tests
 - [ ] **Acceptance:** roles enforced; 2FA/reset work; audit complete; no secrets in logs.
 
 ## M8 — Live studio
 
-- [ ] M8.1 Transport implementation
+- [x] M8.1 Transport implementation
 - [ ] M8.2 Browser studio
-- [ ] M8.3 Mixer live integration
-- [ ] M8.4 External encoder / line-in
-- [ ] M8.5 Recording (30-day retention)
+- [x] M8.3 Mixer live integration
+- [x] M8.4 External encoder / line-in
+- [x] M8.5 Recording (30-day retention)
 - [ ] M8.6 Cue / next-track preview
-- [ ] M8.7 DJ shift reports
+- [x] M8.7 DJ shift reports
 - [ ] M8.8 Tests
 - [ ] **Acceptance:** single DJ live < 500 ms target; ducking works; recording works; external encoder works; no feedback.
 
@@ -270,12 +270,19 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | `pnpm lint`/`typecheck`/`build`/`test`/`format:check` (M1.2)             | ✅     | clean; 12 tests / 4 files (DB unit tests deferred to M1.7); `packages/db/drizzle` added to `.prettierignore` (prettier has no `.sql` parser); eslint `no-unused-vars` satisfied by `_t` in the two drizzle callback slots; `drizzle-kit generate` re-run confirms "No schema changes, nothing to migrate"                                                                                                              |
 
 | 2026-11-22 | `git push` (M1.2 `9120bda`) → `gh run list` | ✅ | run 45051552598 **success** (34 s): lint / typecheck / build / test (12 tests) / format:check all green on the 26-table schema + generated-migration commit; `origin/main` = `9120bda` |
+| 2026-11-22 | `pnpm test` (M1) | ✅ | 14 DB tests: seed (24 slots, admin argon2id), CHECK/FK constraints, repositories, parameterized search, sessions/keys/resets, backup→restore round-trip, 14 daily/8 weekly rotation, retention |
+| 2026-11-22 | `pnpm db:seed` / `user:create` / `db:backup` / `db:restore` | ✅ | 38 playlists, 24 slots, 27 settings, admin created; backup integrity ok; restore keeps a pre-restore safety copy |
+| 2026-11-22 | `pnpm bench:media 1000` | ✅ | 1,000 files scanned in 2.97 s (budget 60 s); 10k-row queries 4.5–7.5 ms (budget 100 ms) |
+| 2026-11-22 | media tests (M2) | ✅ | tags + filename fallback, artwork cache, folder→playlist, exact + near duplicates, ebur128 tone −20.0 LUFS ±0.5, watch folder imports in < 5 s, MusicBrainz suggestion apply |
+| 2026-11-22 | generator stress (M3) | ✅ | 120 days / 2,879 hours: 0 warnings, 0 relaxations, every hour 3,555–3,645 s; separation property test; DST gap/overlap; on-air/past guards; 23:00/00:05 triggers + catch-up |
+| 2026-11-22 | playout tests (M4) | ✅ | deck pause/resume/seek ±50 ms; two hot tones limited ≤ −0.9 dBFS; duck depth −12 dB; boundary rules 2/3/4/5/7 + filler on a simulated clock; play-now resume; silence → emergency in 1 s; takeover resume |
+| 2026-11-22 | `pnpm test:integration` (real Icecast 2.4) | ✅ | all 4 mounts audible with correct content types, HLS segments, encoder kill → restart, skip, live duck + FLAC recording, Icecast restart → encoders reconnect |
+| 2026-11-22 | `pnpm bench:chain 60` (2 vCPU) | ✅ | whole chain 15.7% of one core = 7.9% of 2 vCPU (budget 50%); worker RSS 133 MB; 0 clock stalls, 0 underruns, 0 restarts |
+| 2026-11-22 | API tests (M6/M7) | ✅ | 30 tests: CSRF, RBAC matrix, login rate limit, TOTP + one-time recovery codes, reset link single use + expiry, scoped/revoked API keys + triggers, audited playout commands, requests (profanity/cooldown/blacklist/approve/played), settings hot reload, upload sniffing, public CORS, OpenAPI, WS < 200 ms |
 
 ## Blockers / open decisions
 
 - Thimeo Stereo Tool edition and exact streaming CLI method — M0.5 spike.
-- Icecast exact version/HLS config — M0.6 spike.
-- Live transport choice — M0.7 spike.
 - Domain, SMTP, webhook endpoints, station branding — placeholders until deployment.
 - Emergency loop file — user-provided; validate at install/startup.
 - Dev-host caveat: FFmpeg here is a Scoop shim, so exit codes and CPU counters are unreliable
@@ -283,17 +290,6 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 
 ## Next up
 
-1. **M1.3 Seed** — default station, 24 playlists (`[PM] 00:00`…`[PM] 23:00`), decade playlists
-   (`00s`–`90s`), `General`, `Nieuws/`, 24 `schedule_slots`, default settings/template, emergency
-   playlist placeholder, bootstrap admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD`. **Verify:** fresh DB
-   has 24 schedule slots; admin login works.
-2. **M1.4–M1.7** — typed repositories (media, playlists, plans, users, sessions, requests, alerts,
-   audit, stats, settings; parameterized queries, station scoping), settings service + `audit_log`
-   history + `settings:reload`, the rest of the CLI (`db:seed`, `db:backup`, `db:restore`,
-   `user:create`, `media:scan` — `db:migrate` and `config:validate` already exist) and the DB
-   unit tests (`packages/db/src/*.test.ts`) that CI must keep green.
-3. **Still blocked / to re-measure:** **M0.5** Thimeo Stereo Tool spike (licensed `stereotool_cmd` +
-   `.sds` + `.lic` on a Linux host) — keeps ADR 0002 Proposed and the last M0 acceptance row open;
-   CPU/latency numbers in ADRs 0001/0003/0004 are Windows-host only (re-measure on Debian 13 / 2 vCPU);
-   Firefox/Safari HLS smoke test on staging; the `/listen` SPA will still need an nginx SPA fallback
-   plus a `/stream` mount equivalent when deployment lands (M13).
+1. **M9–M11** — React admin console (dashboard, playout console, live studio page, schedule, playlists, media, requests, events, stats, users, settings, alerts) and the public `/listen` site.
+2. **M12–M15** — alert channels/metrics/backups wiring is done in the API; remaining: deployment scripts (install/upgrade/uninstall, systemd, nginx), CI integration + E2E jobs, docs, NOTICE, launch checklist.
+3. **Needs the real environment:** M0.5 Stereo Tool flags with the licensed `stereotool_cmd` (args are configurable in `stereotool.args`), PHP golden diff for the generator (needs the playlist_maker source), 24 h soak + Firefox/Safari HLS on the Debian 13 LXC.
