@@ -5,5 +5,10 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../shared" }]
+  "references": [
+    {
+      "path": "../shared"
+    }
+  ],
+  "exclude": ["src/**/*.test.ts", "src/test-utils.ts"]
 }

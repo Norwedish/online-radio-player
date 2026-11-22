@@ -10,9 +10,7 @@ afterEach(async () => {
   await server?.close();
 });
 
-function client(
-  port: number,
-): Promise<{
+function client(port: number): Promise<{
   send: (o: unknown) => void;
   raw: (s: string) => void;
   next: (pred?: (m: Record<string, unknown>) => boolean) => Promise<Record<string, unknown>>;

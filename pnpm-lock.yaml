@@ -83,9 +83,6 @@ importers:
       nodemailer:
         specifier: ^10.6.1
         version: 10.6.1
-      otplib:
-        specifier: ^13.6.0
-        version: 13.6.0
       ws:
         specifier: ^8.23.0
         version: 8.23.0
@@ -899,10 +896,6 @@ packages:
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
 
-  '@noble/hashes@2.4.0':
-    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
-    engines: {node: '>= 20.19.0'}
-
   '@node-rs/argon2-android-arm-eabi@2.2.2':
     resolution: {integrity: sha512-c11BOrPLBWNC1cDyzGB+Bil+flmxfZbB2hv8EhcobmAsFKMyqkHPNhUY4qhcjv1U+4+Vmw4G8H+l224iO2g/Dw==}
     engines: {node: '>= 10'}
@@ -988,24 +981,6 @@ packages:
   '@node-rs/argon2@2.2.2':
     resolution: {integrity: sha512-NtdlPPWtR5U4BxX5EGJYza+UklNaoWORmkaKCMqf/nyKeXWKVwNt8KfQoRpNT7OB1DcEwmePafO4wZyW+sbfCQ==}
     engines: {node: '>= 10'}
-
-  '@otplib/core@13.6.0':
-    resolution: {integrity: sha512-TL6/FKKzR55Vr7zo3YGFtPMCSV3SpYPtuvE3T1XcwjFczD9pHU4dYYQBl0AcNvGcqAt4/fPqhZEFfB2OBcnlPA==}
-
-  '@otplib/hotp@13.6.0':
-    resolution: {integrity: sha512-oPpaQBkAYjBxAs+FWdGNumsEwWJhIZVcsv0vEi+w4OzzLQ6UDZ2qXZNSeF9NljTj6/8d4e1Z4o6RgJa3aIxAOA==}
-
-  '@otplib/plugin-base32-scure@13.6.0':
-    resolution: {integrity: sha512-s6uMbj4MBebvAPnBns1y2RhQ765/U04qHlZmFLV02dlD1S06pU46g/7tHX0vkCx5Pnty723loXto/PM5gFEEdg==}
-
-  '@otplib/plugin-crypto-noble@13.6.0':
-    resolution: {integrity: sha512-m/8mOhtIhsr4zLtb9MlLI6+w7ZNiKSFnT8Dv7eHR9TCyf2Sxva5e+MbV0wONmF7ZLuvo9F3DtzfPjc748PhJcw==}
-
-  '@otplib/totp@13.6.0':
-    resolution: {integrity: sha512-bMlq0MaUaQE3lOSH352Mrzcwpau5pMf7pMLROS+llk2evpC/sE7SHl9ajBl+PiPnGGb6LGYEjDvKqX8caXkGdw==}
-
-  '@otplib/uri@13.6.0':
-    resolution: {integrity: sha512-CiLFMONTpCi3ara6yQQX3nlpYhafCALKJweA7+7Z+aDkRrW3QmD5a/9thKmQ0cGp2W70AMG/6BSTy82h74LHRw==}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -1169,9 +1144,6 @@ packages:
     resolution: {integrity: sha512-/W1LBsMeQAdiCuH3Z2gkRspl3mlxL+butknhq4vXjmxO45vuT08BqhehxDoE4YS+m6s9lhpq6M9/PjTEAg8PYw==}
     cpu: [x64]
     os: [win32]
-
-  '@scure/base@2.4.0':
-    resolution: {integrity: sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -2309,9 +2281,6 @@ packages:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
 
-  otplib@13.6.0:
-    resolution: {integrity: sha512-PCx6+14PYndCRk0G3JuJHmlExzENs43gafqMUVmSFmzMbEweVhBiYcBCL8B32ZMEDPZA4OsMxFEeAob1H+YFZg==}
-
   p-limit@3.1.0:
     resolution: {integrity: sha512-TYOanM3wGwNGsZN2cVTYPArw454xnXj5qmWF1bEoAc4+cU/ol7GVh7odevjp1FNHduHc3KZMcFduxU5Xc6uJRQ==}
     engines: {node: '>=10'}
@@ -3355,8 +3324,6 @@ snapshots:
 
   '@lukeed/ms@2.0.2': {}
 
-  '@noble/hashes@2.4.0': {}
-
   '@node-rs/argon2-android-arm-eabi@2.2.2':
     optional: true
 
@@ -3411,33 +3378,6 @@ snapshots:
       '@node-rs/argon2-win32-arm64-msvc': 2.2.2
       '@node-rs/argon2-win32-ia32-msvc': 2.2.2
       '@node-rs/argon2-win32-x64-msvc': 2.2.2
-
-  '@otplib/core@13.6.0': {}
-
-  '@otplib/hotp@13.6.0':
-    dependencies:
-      '@otplib/core': 13.6.0
-      '@otplib/uri': 13.6.0
-
-  '@otplib/plugin-base32-scure@13.6.0':
-    dependencies:
-      '@otplib/core': 13.6.0
-      '@scure/base': 2.4.0
-
-  '@otplib/plugin-crypto-noble@13.6.0':
-    dependencies:
-      '@noble/hashes': 2.4.0
-      '@otplib/core': 13.6.0
-
-  '@otplib/totp@13.6.0':
-    dependencies:
-      '@otplib/core': 13.6.0
-      '@otplib/hotp': 13.6.0
-      '@otplib/uri': 13.6.0
-
-  '@otplib/uri@13.6.0':
-    dependencies:
-      '@otplib/core': 13.6.0
 
   '@pinojs/redact@0.4.0': {}
 
@@ -3533,8 +3473,6 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.68.8':
     optional: true
-
-  '@scure/base@2.4.0': {}
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -4613,15 +4551,6 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
       word-wrap: 1.2.5
-
-  otplib@13.6.0:
-    dependencies:
-      '@otplib/core': 13.6.0
-      '@otplib/hotp': 13.6.0
-      '@otplib/plugin-base32-scure': 13.6.0
-      '@otplib/plugin-crypto-noble': 13.6.0
-      '@otplib/totp': 13.6.0
-      '@otplib/uri': 13.6.0
 
   p-limit@3.1.0:
     dependencies:
