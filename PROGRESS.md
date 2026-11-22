@@ -52,7 +52,8 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 - [x] A tone is audible through the real chain (with mock Stereo Tool). — M0.10: Chrome played
       `/listen` off the Icecast mount; out-of-band decode confirmed the tone.
 - [x] CI skeleton runs lint, typecheck, test and build. — `.github/workflows/ci.yml` covers all
-      four; verified locally on this host (M0.10 also ran `pnpm build` clean).
+      four; verified locally on this host (M0.10 also ran `pnpm build` clean), and now on GitHub
+      Actions: `CI` is **green** on the private repo (`main` = `dba3ea6`, run 45043963972).
 
 ## M1 — Data model, configuration, persistence
 
@@ -254,6 +255,7 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | `pnpm config:validate <broken config B>` (structurally valid)            | ✅     | exit 1, 6 cross-field problems: 2 primary mounts, mp3 mount needs `audio/mpeg`, opus mount extension must be `.ogg`, `icecast.port == worker.protocolPort`, `backups.dir != db.backupDir`, duplicate nas id                             |
 | 2026-11-22 | `pnpm test` (M1.1)                                                       | ✅     | 12 tests / 4 files, incl. 5 new in `packages/shared/src/config.test.ts` (example accepted, defaults applied, `*Env` rejected as value, contentType mismatch, two primaries)                                                             |
 | 2026-11-22 | `pnpm lint` / `typecheck` / `build` / `format:check`                     | ✅     | clean after zod-3 API fixes (`.regex()`, `.min()`/`.max()`, `.nonnegative`) and removing the unused zod helpers                                                                                                                         |
+| 2026-11-22 | `git push` → `gh run list` (private repo)                                | ✅     | `origin` = `github.com/Norwedish/online-radio-player` (created private, default branch `main`); first CI run 45043691044 failed on `ERR_PNPM_BAD_PM_VERSION`, fixed in `dba3ea6`, run 45043963972 **success**                           |
 
 ## Blockers / open decisions
 
