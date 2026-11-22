@@ -1146,6 +1146,11 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
   - Measure latency; test nginx proxying.
   - Write `docs/adr/0003-icecast-hls.md`.
   - **Verify:** HLS plays in all target browsers; latency recorded; fallback plan documented.
+  - **Result (2026-11-22):** upstream Icecast 2.5.0 has **no HLS** (release notes,
+    docs and the 2.6 milestone confirm). Implemented and measured the fallback:
+    FFmpeg HLS segmenter (AAC 96k, 2 s segments) + nginx; Chrome plays it,
+    latency 2-14 s by player tuning (ADR 0003). Firefox/Safari still need a
+    staging smoke test.
 - [ ] **M0.7 Spike: live transport**
   - Evaluate LiveKit vs WebSocket Opus vs external Icecast ingest.
   - Measure glass-to-air latency and CPU on a 2 vCPU VM/container.

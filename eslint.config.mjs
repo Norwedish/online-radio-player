@@ -11,6 +11,10 @@ export default tseslint.config(
       "**/.vite/**",
       "**/*.config.js",
       "**/*.config.mjs",
+      // Runtime/generated artifacts (media, fixtures, HLS .ts segments, logs).
+      "data/**",
+      "logs/**",
+      "media/**",
     ],
   },
   js.configs.recommended,

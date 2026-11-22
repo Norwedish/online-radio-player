@@ -22,6 +22,7 @@
     "spike:chain": "node scripts/spike-ffmpeg-chain.mjs",
     "spike:fixtures": "node scripts/make-fixtures.mjs",
     "spike:sqlite": "node scripts/spike-sqlite-wal.mjs",
+    "spike:hls": "node scripts/spike-hls.mjs",
     "clean": "tsc -b --clean"
   },
   "devDependencies": {

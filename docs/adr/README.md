@@ -6,7 +6,7 @@ ADRs capture decisions that are expensive to reverse. Each spike in M0 produces 
 | -------------------------------------- | ---------------------------- | -------- |
 | [0001](./0001-ffmpeg-pcm-chain.md)     | FFmpeg PCM chain             | Accepted |
 | [0002](./0002-stereotool-transport.md) | Thimeo Stereo Tool transport | Proposed |
-| [0003](./0003-icecast-hls.md)          | Icecast HLS                  | Proposed |
+| [0003](./0003-icecast-hls.md)          | HLS output (FFmpeg + nginx)  | Accepted |
 | [0004](./0004-live-transport.md)       | Live studio transport        | Proposed |
 | [0005](./0005-sqlite-wal.md)           | SQLite WAL concurrency       | Accepted |
 
