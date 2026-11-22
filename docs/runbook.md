@@ -143,13 +143,14 @@ bypassed Stereo Tool 5 min, disk free < 5 GB.
 
 ## Measured budgets (for spotting regressions)
 
-| What                                              | Measured                                            | Budget           |
-| ------------------------------------------------- | --------------------------------------------------- | ---------------- |
-| Whole audio chain CPU (mock ST)                   | 7.9 % of 2 vCPU, worker RSS 133 MB                  | < 50 % of 2 vCPU |
-| API under load (500 listeners, 200 WS, 100 req/s) | p95 6.8 ms, p99 12.6 ms, 0 errors, 10 % CPU, 136 MB | p95 < 200 ms     |
-| Library scan                                      | 1 000 files in 2.97 s                               | < 60 s           |
-| Restore RTO                                       | 19.5 s                                              | —                |
-| Fresh install                                     | 30 s (container, packages cached)                   | < 30 min         |
+| What                                              | Measured                                                  | Budget                         |
+| ------------------------------------------------- | --------------------------------------------------------- | ------------------------------ |
+| Whole audio chain CPU (mock ST)                   | 7.9 % of 2 vCPU, worker RSS 133 MB                        | < 50 % of 2 vCPU               |
+| API under load (500 listeners, 200 WS, 100 req/s) | p95 6.8 ms, p99 12.6 ms, 0 errors, 10 % CPU, 136 MB       | p95 < 200 ms                   |
+| Library scan                                      | 1 000 files in 2.97 s                                     | < 60 s                         |
+| Stereo Tool plugin instance                       | ~675 MB RSS, 38 threads, 85 ms latency (default settings) | fits in 3 GB RAM with the rest |
+| Restore RTO                                       | 19.5 s                                                    | —                              |
+| Fresh install                                     | 30 s (container, packages cached)                         | < 30 min                       |
 
 The 24-hour soak and real Stereo Tool CPU must be measured on the production LXC (see the launch
 checklist).

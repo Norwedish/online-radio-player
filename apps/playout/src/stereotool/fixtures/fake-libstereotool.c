@@ -9,8 +9,11 @@
  *   - the licence is valid only for the key "good-key"; with any other key the
  *     "unlicensed features" text is "Advanced clipper"
  *   - a preset named "crash.sts" makes Process abort() (crash isolation test)
+ *   - like the real Windows library, it prints to stdout on its own (during
+ *     Process and in Delete), which must never reach the audio stream
  */
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,7 +45,11 @@ EXPORT fake_st *stereoTool_Create3(bool has_gui, const char *key, const char *na
   return stereoTool_Create(key);
 }
 
-EXPORT void stereoTool_Delete(fake_st *st) { free(st); }
+EXPORT void stereoTool_Delete(fake_st *st) {
+  printf("Waining for instance 1 to enter Disabled state...\r\n");
+  fflush(stdout);
+  free(st);
+}
 
 EXPORT bool stereoTool_LoadPreset(fake_st *st, const char *filename, int type) {
   size_t n = strlen(filename);
@@ -70,6 +77,11 @@ EXPORT bool stereoTool_GetUnlicensedUsedFeatures(fake_st *st, char *text, int ma
 
 EXPORT void stereoTool_Process(fake_st *st, float *samples, int32_t frames, int32_t channels, int32_t rate) {
   (void)rate;
+  static int calls = 0;
   if (st->crash) abort();
+  if (calls++ == 0) {
+    printf("fake libStereoTool: processing started\n"); /* stray stdout text */
+    fflush(stdout);
+  }
   for (int32_t i = 0; i < frames * channels; i++) samples[i] *= 0.5f;
 }

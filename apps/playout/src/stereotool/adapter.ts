@@ -69,7 +69,7 @@ export interface PluginInfo {
 
 /** Library chatter (ALSA/JACK probing, realtime priority) that is not an error. */
 const NOISE =
-  /^(ALSA lib |Cannot connect to server|jack server|JackShm|Jack: |Warning: Cannot set realtime|Cannot lock down)/;
+  /^(ALSA lib |Cannot connect to server|jack server|JackShm|Jack: |Warning: Cannot set realtime|Cannot lock down|Wai(t)?ning for instance \d+ to enter)/;
 
 export const DEFAULT_HOST_SCRIPT = fileURLToPath(
   new URL("../../bin/stereotool-host.mjs", import.meta.url),
@@ -168,27 +168,41 @@ export class ProcessStereoTool implements StereoToolAdapter {
       this.giveUp("stereotool_missing");
       return;
     }
+    // Plugin mode: PCM comes back on its own pipe (fd 3) because the vendor library prints to
+    // stdout by itself; stdout is then just more log text.
+    const plugin = this.mode === "plugin";
     const proc = spawn(this.command, this.args, {
       windowsHide: true,
-      stdio: ["pipe", "pipe", "pipe"],
-      ...(this.env ? { env: this.env } : {}),
+      stdio: plugin ? ["pipe", "pipe", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      ...(this.env || plugin
+        ? {
+            env: {
+              ...(this.env ?? process.env),
+              ...(plugin ? { STEREOTOOL_HOST_PCM_FD: "3" } : {}),
+            },
+          }
+        : {}),
     });
     this.proc = proc;
     this.startedAt = Date.now();
     this.lastOutputAt = this.startedAt;
-    this.ready = this.mode !== "plugin";
+    this.ready = !plugin;
     this.stripper = this.wavIo ? new WavStripper() : null;
     proc.stdin!.on("error", () => {
       /* the close handler restarts */
     });
     if (this.wavIo) proc.stdin!.write(streamingWavHeader(SAMPLE_RATE, CHANNELS, 16));
-    proc.stdout!.on("data", (d: Buffer) => {
+    const pcmOut = (plugin ? proc.stdio[3] : proc.stdout) as NodeJS.ReadableStream;
+    pcmOut.on("data", (d: Buffer) => {
       if (this.proc !== proc) return;
       this.lastOutputAt = Date.now();
       const pcm = this.stripper ? this.stripper.push(d) : d;
       if (pcm.length > 0) this.emit(pcm);
     });
-    proc.stderr!.on("data", (d: Buffer) => {
+    pcmOut.on("error", () => {
+      /* the close handler restarts */
+    });
+    const onText = (d: Buffer) => {
       for (const raw of this.redact(d.toString()).split("\n")) {
         const line = raw.trim();
         if (!line || NOISE.test(line)) continue;
@@ -199,7 +213,9 @@ export class ProcessStereoTool implements StereoToolAdapter {
         this.opts.log(`stereotool: ${line.slice(0, 500)}`);
         if (/error|invalid|licen[cs]e/i.test(line)) this.error = line.slice(0, 300);
       }
-    });
+    };
+    proc.stderr!.on("data", onText);
+    if (plugin) proc.stdout!.on("data", onText);
     proc.on("error", (e) => {
       this.error = this.redact(e.message);
     });

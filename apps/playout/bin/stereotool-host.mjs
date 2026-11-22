@@ -19,11 +19,15 @@
  * The licence key itself is read from process.env[licenseKeyEnv] so it never
  * appears on a command line.
  *
- *   node stereotool-host.mjs           run as a filter (stdin → stdout)
- *   node stereotool-host.mjs --probe   load, report version/latency/licence, exit
+ * STEREOTOOL_HOST_PCM_FD=3 sends the processed PCM to fd 3 instead of stdout
+ * (the playout worker always does this: the library prints to stdout itself).
+ *
+ *   node stereotool-host.mjs             run as a filter (stdin → stdout / fd 3)
+ *   node stereotool-host.mjs --out FILE  stdin → raw PCM file (manual listening tests)
+ *   node stereotool-host.mjs --probe     load, report version/latency/licence, exit
  */
 import { homedir } from "node:os";
-import { mkdirSync } from "node:fs";
+import { closeSync, createWriteStream, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -233,11 +237,32 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   let licenseCheckedAt = 0;
   const recheckFrames = inst.rate * 10;
 
+  // Processed PCM goes to a dedicated pipe when the worker provides one (fd 3): the vendor
+  // library writes text to stdout on its own (e.g. "Waining for instance 1 to enter Disabled
+  // state..." from stereoTool_Delete on Windows), which must never end up in the audio.
+  // `--out FILE` (manual tests) writes raw PCM to a file instead.
+  const outIdx = argv.indexOf("--out");
+  const pcmFd = Number(env.STEREOTOOL_HOST_PCM_FD ?? 1);
+  const pcmOut =
+    outIdx >= 0 && argv[outIdx + 1]
+      ? createWriteStream(argv[outIdx + 1])
+      : pcmFd === 1
+        ? process.stdout
+        : createWriteStream("", { fd: pcmFd });
+
   return await new Promise((resolve) => {
     let closing = false;
-    const close = (code) => {
-      if (closing) return;
-      closing = true;
+    // stereoTool_Delete is required: without it, process exit waits forever on the library's
+    // own threads (seen with the Windows build). It also prints to stdout, so the audio is
+    // flushed first and, when the audio *is* stdout, fd 1 is closed before Delete runs.
+    const finish = (code) => {
+      if (pcmOut === process.stdout) {
+        try {
+          closeSync(1);
+        } catch {
+          // already closed
+        }
+      }
       try {
         st.destroy(inst.handle);
       } catch {
@@ -245,12 +270,24 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       }
       resolve(code);
     };
-    process.stdout.on("error", (e) => close(e.code === "EPIPE" ? 0 : 1));
+    const close = (code) => {
+      if (closing) return;
+      closing = true;
+      if (pcmOut.writableEnded || pcmOut.destroyed) finish(code);
+      // process.stdout cannot be ended: an empty write's callback fires once the audio is out.
+      else if (pcmOut === process.stdout) pcmOut.write("", () => finish(code));
+      else pcmOut.end(() => finish(code));
+    };
+    pcmOut.on("error", (e) => {
+      if (closing) return;
+      closing = true;
+      finish(e.code === "EPIPE" ? 0 : 1);
+    });
     process.stdin.on("data", (chunk) => {
       const out = proc.push(chunk);
-      if (out.length && !process.stdout.write(out)) {
+      if (out.length && !pcmOut.write(out)) {
         process.stdin.pause();
-        process.stdout.once("drain", () => process.stdin.resume());
+        pcmOut.once("drain", () => process.stdin.resume());
       }
       if (licenseCheckedAt === 0 && proc.framesProcessed >= recheckFrames) {
         licenseCheckedAt = proc.framesProcessed;

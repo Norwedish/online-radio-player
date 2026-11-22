@@ -5,7 +5,8 @@ media library (or a NAS mount). One script does everything; re-running it is saf
 
 ## 1. Prepare the host
 
-**Proxmox LXC (recommended).** Create an unprivileged Debian 13 container: 2 cores, 2048 MB RAM,
+**Proxmox LXC (recommended).** Create an unprivileged Debian 13 container: 2 cores, **3072 MB RAM**
+(Stereo Tool's library alone takes about 675 MB; 2048 MB works but leaves little headroom),
 512 MB swap, 16 GB root disk (+ media), `nesting=1` (systemd inside unprivileged containers needs
 it). No extra devices are needed: the whole audio path is software (files → FFmpeg → Stereo Tool
 → FFmpeg → Icecast). ALSA/sound devices are **not** required.
@@ -114,7 +115,8 @@ worker starts a small host process (`apps/playout/bin/stereotool-host.mjs`) that
    AzuraCast; also `all_settings`, `audiofm`, `audio`, `processing`).
 3. **Updating Stereo Tool:** re-run `sudo ./scripts/install.sh --stereotool <new zip>` (only that step
    changes anything) and `systemctl restart radio-playout`.
-4. **Check it** by hand, as the `radio` user:
+4. **Check it** by hand, as the `radio` user (on Windows, see "Testing your preset and key
+   locally" below):
 
    ```bash
    sudo -u radio env STEREOTOOL_LICENSE_KEY=… \
@@ -129,6 +131,27 @@ If the library crashes or stalls (no output for 5 s), only the host process dies
 restarts it with backoff and keeps the station on air unprocessed meanwhile (`bypassOnFailure`,
 critical alert). While the host starts up, audio is also passed through unprocessed, so a restart
 never adds delay to the stream.
+
+#### Testing your preset and key locally (Windows)
+
+The zip also contains the Windows build of the same library (`lib\Windows\64\libStereoTool_64.dll`),
+and the plugin host runs on Windows too. So you can check a preset and licence key on a
+workstation before any server exists. From the repository root, after `pnpm install`:
+
+```powershell
+$env:STEREOTOOL_LICENSE_KEY = Read-Host "Stereo Tool licence key" -MaskInput
+$env:STEREOTOOL_HOST = @{ library = "C:\stereotool\libStereoTool_64.dll"; preset = "C:\stereotool\station.sts"; licenseKeyEnv = "STEREOTOOL_LICENSE_KEY"; home = "C:\stereotool\home" } | ConvertTo-Json -Compress
+node apps\playout\bin\stereotool-host.mjs --probe 2>&1 | Select-String "@stereotool|error"
+```
+
+Look for a numeric `loadType` (the preset loaded), `"valid":true` and `"unlicensedFeatures":""`.
+To listen, run a song through it with `--out` (never stdout: the library prints text there):
+
+```powershell
+ffmpeg -v error -y -i "C:\music\song.mp3" -ac 2 -ar 48000 -f s16le "$env:TEMP\st-in.raw"
+cmd /c "node apps\playout\bin\stereotool-host.mjs --out %TEMP%\st-out.raw < %TEMP%\st-in.raw"
+ffmpeg -v error -y -f s16le -ar 48000 -ac 2 -i "$env:TEMP\st-out.raw" "$env:USERPROFILE\Desktop\stereotool-test.wav"
+```
 
 **Legacy CLI.** With only `stereotool_cmd`, set `inputMode: "stdio-pcm"`; the worker then runs
 `stereotool.binary` with `stereotool.args` (default `["-", "-", "-s", "{preset}"]`, placeholders

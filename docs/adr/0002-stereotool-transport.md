@@ -63,6 +63,20 @@ Configuration (`station.json` → `stereotool`): `inputMode: "plugin"` (default)
 the headless (non-X11) library for the CPU (`intel64` / `arm64` / `intel32` / `arm32`, the same
 selection as AzuraCast), records the SDK version and probes it.
 
+### Findings from testing the real library (Windows + Linux builds)
+
+- **The library prints to stdout itself.** For example, `stereoTool_Delete` writes
+  `Waining for instance 1 to enter Disabled state...` (typo theirs) on Windows. On a stdout
+  audio pipe that is 51 bytes of text in the PCM, which misaligns every following 4-byte frame
+  (loud noise on air). So the worker always takes the processed PCM from a **dedicated pipe
+  (fd 3, `STEREOTOOL_HOST_PCM_FD`)**, and the host's stdout is just logged. For manual tests,
+  `--out FILE` writes the PCM to a file.
+- **`stereoTool_Delete` must run before exit.** Without it, process exit deadlocks on the
+  library's threads; with the Windows build the process could not even be killed (stuck in
+  teardown until reboot). The host flushes the audio, then calls `Delete`, then exits.
+- **Memory:** about **675 MB resident per instance** (38 threads) with default settings, on both
+  Linux (`VmHWM` 690 920 kB) and Windows. Budget the host for it (see install.md sizing).
+
 ## Consequences
 
 - No privileged container, no sound devices, no extra ports. The library needs the ALSA
@@ -72,6 +86,7 @@ selection as AzuraCast), records the SDK version and probes it.
   verified with a deliberately crashing fake library.
 - Latency: the library reports 85 ms (4096 samples at 48 kHz) with default settings. Pipe overhead
   is negligible.
+- Memory: about 675 MB for the Stereo Tool instance, on top of the worker and API.
 - The CLI path remains for stations that only have `stereotool_cmd`.
 
 ## Verification
