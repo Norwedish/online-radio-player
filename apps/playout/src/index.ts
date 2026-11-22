@@ -1,33 +1,32 @@
-import { DEFAULT_BOUNDARY_TOLERANCE_SECONDS } from "@radio/core";
-import { PROJECT_VERSION } from "@radio/shared";
-import { startSkeletonStream } from "./skeleton.js";
-
 /**
- * M0 scaffold: a long-running worker with a heartbeat plus the M0.10 walking
- * skeleton stream (tone -> mock ST -> Icecast). M4 replaces both with the audio
- * clock, decks, mixer and scheduler.
+ * radio-playout entry point (systemd: radio-playout.service).
+ * Fails fast on invalid config; exits non-zero on fatal errors so systemd
+ * restarts it with backoff (PLAN §4.3).
  */
-const heartbeatMs = Number(process.env.PLAYOUT_HEARTBEAT_MS ?? 10_000);
+import { loadRuntimeConfig, PROJECT_VERSION } from "@radio/shared";
+import { PlayoutWorker } from "./worker.js";
 
-console.log(
-  `radio-playout ${PROJECT_VERSION} started (boundary tolerance ${DEFAULT_BOUNDARY_TOLERANCE_SECONDS}s)`,
-);
+const log = (m: string) => console.log(`${new Date().toISOString()} [playout] ${m}`);
 
-const skeleton = process.env.PLAYOUT_SKELETON_STREAM === "0" ? null : startSkeletonStream();
-if (skeleton) {
-  console.log("radio-playout skeleton stream is live on /hq.mp3");
+async function main(): Promise<void> {
+  const config = loadRuntimeConfig();
+  log(
+    `radio-playout ${PROJECT_VERSION} starting (config ${config.configFile}, db ${config.db.file}, stereotool ${config.stereotool.enabled ? (config.stereotoolMock ? "mock" : "enabled") : "disabled"})`,
+  );
+  const worker = new PlayoutWorker(config, { log });
+  await worker.start();
+  const shutdown = async (signal: string) => {
+    log(`received ${signal}, shutting down`);
+    await worker.stop().catch(() => {});
+    process.exit(0);
+  };
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
-const timer = setInterval(() => {
-  console.log(`radio-playout heartbeat ${new Date().toISOString()}`);
-}, heartbeatMs);
-
-function shutdown(signal: string): void {
-  console.log(`radio-playout received ${signal}, shutting down`);
-  clearInterval(timer);
-  skeleton?.stop();
-  process.exit(0);
-}
-
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+main().catch((error) => {
+  console.error(
+    `radio-playout fatal: ${error instanceof Error ? (error.stack ?? error.message) : error}`,
+  );
+  process.exit(1);
+});

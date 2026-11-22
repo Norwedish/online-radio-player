@@ -36,7 +36,9 @@
     "generate": "tsx scripts/cli.ts generate",
     "preview": "tsx scripts/cli.ts preview",
     "retention": "tsx scripts/cli.ts retention",
-    "bench:media": "tsx scripts/bench-media.ts"
+    "bench:media": "tsx scripts/bench-media.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "bench:chain": "tsx scripts/bench-chain.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

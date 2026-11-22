@@ -106,6 +106,17 @@ const stereotoolSchema = z
       .default("unknown")
       .describe("Detected at install time; 'live' is the licensed purchase"),
     inputMode: z.literal("stdio-pcm").default("stdio-pcm"),
+    args: z
+      .array(z.string())
+      .default(["-", "-", "-s", "{preset}"])
+      .describe(
+        "stereotool_cmd arguments; placeholders {preset} {license} {licenseKey} {rate} {channels}. Confirm against the licensed binary (M0.5)",
+      ),
+    wavIo: z
+      .boolean()
+      .default(true)
+      .describe("Wrap stdin in a streaming WAV header and strip the WAV header from stdout"),
+    licenseKeyEnv: envName("Stereo Tool license key").default("STEREOTOOL_LICENSE_KEY"),
     restart: z
       .object({
         maxAttempts: z.number().int().gte(0).lte(20).default(5),

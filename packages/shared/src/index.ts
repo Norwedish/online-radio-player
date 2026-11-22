@@ -32,6 +32,7 @@ export * from "./schedule.js";
 export * from "./protocol.js";
 export * from "./roles.js";
 export * from "./runtime.js";
+export * from "./icecast.js";
 
 export const PROJECT_NAME = "online-radio-player";
 export const PROJECT_VERSION = "0.1.0";

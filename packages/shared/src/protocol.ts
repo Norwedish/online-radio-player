@@ -161,6 +161,10 @@ export const commandSchemas = {
     sessionId: z.number().int().nullable().default(null),
     record: z.boolean().default(true),
     recordPath: z.string().nullable().default(null),
+    /** One-time token the browser studio presents on the worker's live WebSocket. */
+    token: z.string().nullable().default(null),
+    /** Icecast ingest URL or ALSA device for external/line-in sources. */
+    input: z.string().nullable().default(null),
   }),
   "live:stop": z.object({}).default({}),
   "live:set_gain": z.object({ gainDb: z.number().gte(-60).lte(24) }),
