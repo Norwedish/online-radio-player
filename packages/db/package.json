@@ -21,9 +21,11 @@
   },
   "dependencies": {
     "@radio/shared": "workspace:*",
-    "better-sqlite3": "^12.0.0"
+    "better-sqlite3": "^12.0.0",
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0"
+    "@types/better-sqlite3": "^7.6.0",
+    "drizzle-kit": "^0.31.11"
   }
 }

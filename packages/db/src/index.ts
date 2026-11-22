@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 
-export const DB_SCHEMA_VERSION = 0;
+/** Schema revision — see ./schema.js (M1.2) and the migrations in ../drizzle. */
+export const DB_SCHEMA_VERSION = 1;
 
 export interface DatabaseOptions {
   /** Open without write access — the playout worker never writes (ADR 0005). */
@@ -25,3 +26,7 @@ export function openDatabase(file: string, options: DatabaseOptions = {}): Datab
   }
   return db;
 }
+
+/** Migrations and schema metadata (M1.2) — see ./migrate.js and ./schema.js. */
+export { defaultMigrationsFolder, runMigrations, type MigrationReport } from "./migrate.js";
+export { SCHEMA_TABLE_NAMES } from "./schema.js";

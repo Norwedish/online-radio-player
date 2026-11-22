@@ -53,6 +53,13 @@ Use **better-sqlite3 12.x** with the database on local disk:
   confirmed this SQLite build rejects the abbreviated `CREATE tbl(...)` /
   `INSERT VALUES(...)` / FROM-elision forms some Drizzle examples show, so keep the
   schema SQL standard and re-check Drizzle output when it is added.
+- Migrations are **generated, not hand-written** (owner decision 2026-11-22): drizzle-kit
+  (`^0.31.11`, devDependency of `@radio/db` only) emits standard SQLite SQL from
+  `packages/db/src/schema.ts` into the committed `packages/db/drizzle/`. The runtime stays
+  better-sqlite3 with the pragmas above — drizzle-orm (`^0.45.4`) is used only by
+  `drizzle-orm/better-sqlite3/migrator`, so no ORM query layer is introduced. `runMigrations()`
+  applies the pending SQL to the `openDatabase()` handle and then asserts that every table in
+  `SCHEMA_TABLE_NAMES` exists and `PRAGMA integrity_check` is `ok`.
 - `better-sqlite3` is CommonJS: import it as `import Database from "better-sqlite3"`.
 
 ## Consequences
@@ -102,3 +109,23 @@ model holds for this workload with wide margin.
 Host caveat: measurements are from the Windows dev machine; the LXC should be
 re-measured in M0.9/M12 with the same script, though the margin is large enough
 that the decision is not sensitive to host differences.
+
+## M1.2 re-check of Drizzle output (2026-11-22)
+
+The abbreviated-form risk flagged above did not materialise. `drizzle-kit generate --name init`
+produced `packages/db/drizzle/0000_init.sql` (412 lines, 56 statement breakpoints) using standard
+`CREATE TABLE name ( … )` forms, and this host's SQLite accepted it:
+
+| Checked in the generated SQL / applied DB | Result                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Tables created by migrating a fresh file  | 26 (25 from §6.3 + `generator_runs` from §7.1), `missing tables: none`                     |
+| Primary keys                              | 26 × `integer PRIMARY KEY AUTOINCREMENT NOT NULL`                                          |
+| FK constraints                            | 40, all `ON UPDATE no action ON DELETE no action`; only `backups` and `stations` have none |
+| Named indexes                             | 31 (18 `index()` + 13 `unique()`), all present in `sqlite_schema` after migration          |
+| Named constraints                         | 12 `CONSTRAINT "…" CHECK(…)` across 11 tables, full expressions rendered                   |
+| `PRAGMA integrity_check`                  | `ok`                                                                                       |
+| Migrator bookkeeping                      | `__drizzle_migrations` (1 row per applied migration + hash), so re-runs are no-ops         |
+
+One drizzle-orm 0.45.4 pitfall was fixed during generation: a constraint must be written
+`check(name, sql.raw(…))`; the bare backtick tag call truncates the CHECK body to its first
+character (`CHECK(a)`), which SQLite still accepts but silently stops enforcing the rule.

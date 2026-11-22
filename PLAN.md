@@ -1217,10 +1217,25 @@ The generator plans hours independently, as in playlist_maker. The **runtime sch
     HLS defaults **off** (ADR 0003 owner confirmation). Verified: example config OK (exit 0); a
     deliberately broken config produced 7 precise structural errors; a structurally valid config
     produced 6 cross-field problems; 5 new vitest cases in `packages/shared/src/config.test.ts`.
-- [ ] **M1.2 Database schema**
-  - Files: `packages/db/src/schema.ts`, `packages/db/drizzle/`.
+- [x] **M1.2 Database schema**
+  - Files: `packages/db/src/schema.ts`, `packages/db/drizzle/`, `packages/db/src/migrate.ts`, `scripts/db-migrate.ts`.
   - All tables from §6.3; indexes; constraints; `generator_runs`.
   - **Verify:** `pnpm db:migrate` on an empty SQLite file creates all tables; `PRAGMA integrity_check` = ok.
+  - **Result (2026-11-22):** 26 tables (`sqliteTable`, drizzle-orm `^0.45.4`): every table gets
+    `id: integer().primaryKey({ autoIncrement: true })`, `station_id` FK on all but `stations`/`backups`
+    (40 FK constraints total, `.references()` only — no redundant `foreignKey({})`), 31 named indexes
+    (18 `index()` + 13 `unique()`), 12 named `CONSTRAINT "…" CHECK(…)` written as
+    `check(name, sql.raw(…))` (a bare backtick tag call `sql(…)` silently truncates the CHECK to
+    its first character), 39 `DEFAULT` clauses. drizzle-kit (`^0.31.11`, devDependency only) generated
+    `packages/db/drizzle/0000_init.sql` (`drizzle.config.ts`: `dialect: "sqlite"`,
+    `dbCredentials.url: "./data/drizzle-diff.db"`); committed SQL + `meta/` is the source of truth.
+    Runtime stays better-sqlite3 + ADR 0005 pragmas; `runMigrations()` (in `@radio/db`) calls
+    `migrate(drizzle(db), { migrationsFolder })`, then asserts every `SCHEMA_TABLE_NAMES` table exists,
+    no unexpected tables and `integrity_check` = `ok`. `pnpm db:migrate [dbFile]` = `tsx scripts/db-migrate.ts`
+    (root cannot resolve `drizzle-orm`/`better-sqlite3`, so it imports `../packages/db/src/migrate.ts`),
+    accepts `DATABASE_URL` `file:`/`sqlite://` forms, default `data/radio.db`. Verified: fresh DB = 1
+    migration / 26 tables / integrity `ok`; re-run = 0 applied; read-back shows the FKs, CHECKs,
+    AUTOINCREMENT PKs and all 31 indexes. Re-running `drizzle-kit generate` reports "No schema changes".
 - [ ] **M1.3 Seed**
   - Create default station, 24 playlists (`[PM] 00:00`…`[PM] 23:00`), schedule slots, decade playlists (`00s`–`90s`), `General`, `Nieuws`, default settings/template, emergency playlist placeholder.
   - Bootstrap admin user from `ADMIN_USERNAME`/`ADMIN_PASSWORD` env (or CLI).

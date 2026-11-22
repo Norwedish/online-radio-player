@@ -4,3 +4,6 @@ coverage
 .pnpm-store
 *.log
 *.tsbuildinfo
+
+# drizzle-kit generated SQL (has no prettier parser)
+packages/db/drizzle
