@@ -269,6 +269,8 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | DB read-back (real SQLite via better-sqlite3, readonly)                  | ✅     | 26 schema tables present (`missing tables: none`) + `sqlite_sequence` + `__drizzle_migrations`; 31 named indexes on disk; 24 tables carry FK constraints (only `backups`/`stations` none); 11 tables host the 12 CHECKs; `plan_items` round-trips `INTEGER PRIMARY KEY AUTOINCREMENT`, 3 FKs `ON UPDATE no action ON DELETE no action`, `CONSTRAINT "plan_items_kind" CHECK(kind IN ('music','news','jingle','live'))` |
 | 2026-11-22 | `pnpm lint`/`typecheck`/`build`/`test`/`format:check` (M1.2)             | ✅     | clean; 12 tests / 4 files (DB unit tests deferred to M1.7); `packages/db/drizzle` added to `.prettierignore` (prettier has no `.sql` parser); eslint `no-unused-vars` satisfied by `_t` in the two drizzle callback slots; `drizzle-kit generate` re-run confirms "No schema changes, nothing to migrate"                                                                                                              |
 
+| 2026-11-22 | `git push` (M1.2 `9120bda`) → `gh run list` | ✅ | run 45051552598 **success** (34 s): lint / typecheck / build / test (12 tests) / format:check all green on the 26-table schema + generated-migration commit; `origin/main` = `9120bda` |
+
 ## Blockers / open decisions
 
 - Thimeo Stereo Tool edition and exact streaming CLI method — M0.5 spike.
