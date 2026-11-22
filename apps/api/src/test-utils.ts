@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   createRepositories,
   openDatabase,
@@ -25,7 +26,7 @@ export async function createTestEnv(options: { admin?: boolean } = {}): Promise<
     NODE_ENV: "test",
     DATA_DIR: dir,
     RADIO_SECRETS: join(dir, "none.env"),
-    RADIO_ROOT: join(dirname(new URL(import.meta.url).pathname), "../../.."),
+    RADIO_ROOT: join(dirname(fileURLToPath(import.meta.url)), "../../.."),
     ICECAST_SOURCE_PASSWORD: "test-source",
     STEREOTOOL_MOCK: "1",
   };

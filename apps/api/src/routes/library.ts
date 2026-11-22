@@ -319,6 +319,7 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
         ...(body as Record<string, never>),
         tags: {
           ...existing.tags,
+          edited: true,
           tagsMissing: !(body.title ?? existing.title) || !(body.artist ?? existing.artist),
         },
       });

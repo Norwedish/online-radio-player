@@ -62,6 +62,12 @@ server {
         proxy_read_timeout 3600s;
     }
 
+    # Icecast's web admin stays on loopback (ssh -L 8000:127.0.0.1:8000 to reach it);
+    # never proxy it to the internet (M15.1 security review).
+    location ^~ /stream/admin {
+        return 404;
+    }
+
     # Icecast mounts (listeners never talk to Icecast directly)
     location /stream/ {
         proxy_pass http://127.0.0.1:__ICECAST_PORT__/;

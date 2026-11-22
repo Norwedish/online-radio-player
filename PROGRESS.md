@@ -2,7 +2,7 @@
 
 **Plan:** [`PLAN.md`](./PLAN.md)  
 **Last updated:** 2026-11-22  
-**Current milestone:** M12–M15 — operations, deployment, hardening (M1–M11 done; M0.5 Stereo Tool spike still blocked on the licensed Linux binary)
+**Current milestone:** Launch on the production LXC (M1–M15 done in software; host-only items in `docs/launch-checklist.md`; M0.5 Stereo Tool flags still need the licensed Linux binary)
 
 > Rule: do not start the next milestone until the current one's acceptance criteria pass. Update this file after every task.
 
@@ -22,10 +22,10 @@
 | M9 — Admin UI & playout console       | ✅ Done         | Broadcast-console UI, studio clock, shortcuts, cart wall            |
 | M10 — Schedule / media / requests UI  | ✅ Done         | 9 Playwright E2E flows green                                        |
 | M11 — Public site & API               | ✅ Done         | /listen + schedule + requests; OpenAPI at /api/docs                 |
-| M12 — Alerts / metrics / backups      | ⬜ Not started  |                                                                     |
-| M13 — Deployment automation           | ⬜ Not started  |                                                                     |
-| M14 — Testing / CI / staging          | ⬜ Not started  |                                                                     |
-| M15 — Hardening / docs / launch       | ⬜ Not started  |                                                                     |
+| M12 — Alerts / metrics / backups      | ✅ Done         | All 4 alert channels + throttling tested; readiness down/recover    |
+| M13 — Deployment automation           | ✅ Done*        | *Verified in a clean Debian container; real LXC + reboot at launch  |
+| M14 — Testing / CI / staging          | ✅ Done*        | *Staging = `install.sh --staging`; no CI deploy target/host yet     |
+| M15 — Hardening / docs / launch       | 🟡 Host items   | Review/docs/NOTICE done; soak + checklist sign-off need the host    |
 
 ## M0 — Foundations and technical spikes
 
@@ -193,44 +193,44 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 
 ## M12 — Alerts, metrics, backups, retention
 
-- [ ] M12.1 Alerts (in-app/email/webhook/syslog)
-- [ ] M12.2 Prometheus metrics
-- [ ] M12.3 Stats (listeners, airplay, CSV, DJ shifts)
-- [ ] M12.4 Backups
-- [ ] M12.5 Retention
-- [ ] M12.6 Health/readiness
-- [ ] **Acceptance:** alerts reach channels; metrics scrape; backup/restore works; retention runs.
+- [x] M12.1 Alerts (in-app/email/webhook/syslog) — `services/alerts.test.ts`: one critical alert reaches DB + bus, email outbox, both webhooks (HMAC verified) and a UDP syslog listener (`<130>1 …`); per-channel min severity; duplicates throttled unless escalated; resolve clears.
+- [x] M12.2 Prometheus metrics — `/metrics` text format test; Grafana dashboard + scrape example in `deploy/grafana/`.
+- [x] M12.3 Stats (listeners, airplay, CSV, DJ shifts) — ops repo tests (bucketing fix), CSV formula-injection test.
+- [x] M12.4 Backups — daily 03:15 timer, 14 daily / 8 weekly rotation test, backup→restore round-trip test.
+- [x] M12.5 Retention — seeded old rows deleted / recent kept (db test); runs every 6 h in the API.
+- [x] M12.6 Health/readiness — readiness 503 while the worker is down, 200 after it reconnects (API test).
+- [x] **Acceptance:** alerts reach channels; metrics scrape; backup/restore works; retention runs.
 
 ## M13 — Deployment automation
 
-- [ ] M13.1 `install.sh`
-- [ ] M13.2 systemd units
-- [ ] M13.3 nginx + TLS
-- [ ] M13.4 Icecast config
-- [ ] M13.5 LXC specifics
-- [ ] M13.6 Upgrade/uninstall
-- [ ] M13.7 Smoke test
-- [ ] **Acceptance:** clean install < 30 min; reboot survives; upgrade preserves data; smoke test passes.
+- [x] M13.1 `install.sh`
+- [x] M13.2 systemd units
+- [x] M13.3 nginx + TLS — Icecast admin no longer proxied (`/stream/admin` → 404, security review F-2).
+- [x] M13.4 Icecast config
+- [x] M13.5 LXC specifics — `docs/install.md` §1 (unprivileged + nesting, no ALSA, optional line-in passthrough, NAS bind mounts, IPv4-only nginx).
+- [x] M13.6 Upgrade/uninstall
+- [x] M13.7 Smoke test
+- [ ] **Acceptance:** clean install < 30 min ✅ (30 s in a clean container); upgrade preserves data ✅; smoke test ✅; **reboot on the real LXC — launch checklist.**
 
 ## M14 — Testing, CI, staging
 
-- [ ] M14.1 Unit tests
-- [ ] M14.2 Audio integration tests
-- [ ] M14.3 E2E tests
-- [ ] M14.4 CI pipeline
-- [ ] M14.5 Staging environment
-- [ ] M14.6 Load test
-- [ ] **Acceptance:** CI green/required; staging deploy; integration/E2E cover critical flows.
+- [x] M14.1 Unit tests — 165 tests / 19 files; coverage thresholds enforced in CI.
+- [x] M14.2 Audio integration tests — 7/7 against real Icecast 2.4.4 (Debian container).
+- [x] M14.3 E2E tests — Playwright flows (see verification log).
+- [x] M14.4 CI pipeline — verify / integration / e2e / audit jobs. Branch protection still to switch on (repo setting).
+- [x] M14.5 Staging environment — `install.sh --staging` (separate units, ports, data, config). No automatic CI deploy: there is no reachable staging host yet.
+- [x] M14.6 Load test
+- [ ] **Acceptance:** CI green ✅ (after the M15 fix commit); integration/E2E cover the critical flows ✅; "required" + one-click staging deploy need branch protection and a staging host.
 
 ## M15 — Hardening, docs, launch
 
-- [ ] M15.1 Security review
-- [ ] M15.2 Performance pass
-- [ ] M15.3 Documentation
-- [ ] M15.4 Backup/restore drill
-- [ ] M15.5 Licensing/notices
-- [ ] M15.6 Launch checklist
-- [ ] **Acceptance:** security/performance/docs complete; drill passes; launch checklist signed.
+- [x] M15.1 Security review — `docs/security-review.md`: audit (1 documented zod-3 exception), gitleaks clean over full history, headers, RBAC, uploads, Icecast exposure; 2 new findings fixed (F-1 `.gitignore`, F-2 Icecast admin).
+- [ ] M15.2 Performance pass — budgets recorded in the runbook (chain 7.9 % of 2 vCPU, API p95 6.8 ms, RTO 19.5 s); **24 h soak with the real Stereo Tool must run on the LXC.**
+- [x] M15.3 Documentation — `docs/install.md`, `admin-guide.md`, `runbook.md`, `api.md` (endpoint tables generated from the routes), ADR index, README.
+- [x] M15.4 Backup/restore drill — 19.5 s RTO in a container; repeat on the host (checklist).
+- [x] M15.5 Licensing/notices — `NOTICE`: Thimeo not redistributed, FFmpeg/Icecast executed unmodified from Debian (no source-offer duty unless shipping an image), npm prod deps all permissive.
+- [ ] M15.6 Launch checklist — `docs/launch-checklist.md` written; **sign-off happens on the production host.**
+- [ ] **Acceptance:** security/docs complete ✅; drill passes ✅ (container); soak + checklist sign-off pending the host.
 
 ## Verification log
 
@@ -282,6 +282,14 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 | 2026-11-22 | `pnpm demo` + Chrome screenshots | ✅ | dashboard, playout console, schedule, media, live studio, listener page (desktop + 390 px mobile) render with live data; zero JS errors |
 | 2026-11-22 | `pnpm test:e2e` (Playwright, system Chrome) | ✅ | 9/9: login redirect + wrong password, RBAC nav, skip/pause survive refresh, schedule hour 14 persists + public schedule, media tag edit, listener request → approve → status, stinger event, live studio fake mic → uplink connected → end, listener page plays |
 | 2026-11-22 | Chrome start-up per mount | ℹ️ | MP3 5.3 s (Chrome's own live-MP3 probing, reproduced with a bare FFmpeg source), AAC 0.6 s, Opus 1.0 s; recorded in ADR 0001 |
+| 2026-11-22 | fresh checkout `pnpm typecheck` | ❌→✅ | **Lost source found:** unanchored `.gitignore` patterns (`media/`, `stereotool*`) had kept `apps/api/src/services/media/` and `apps/playout/src/stereotool/` out of every commit (CI red since `cbe4f13`). Patterns anchored; the 6 modules rebuilt from their call sites (probe, scanner, loudness, watcher, metadata-lookup, Stereo Tool adapter) with 19 new tests |
+| 2026-11-22 | `pnpm lint` / `typecheck` / `format:check` / `build` (Windows) | ✅ | clean; `pnpm-lock.yaml` added to `.prettierignore` |
+| 2026-11-22 | `pnpm test:coverage` (Debian 12 container, ffmpeg 5.1) | ✅ | 165 tests / 19 files, thresholds met; found `ebur128 framelog=quiet` unsupported on FFmpeg 5.1 → `framelog=verbose` |
+| 2026-11-22 | `pnpm test:integration` (Debian 12 container, Icecast 2.4.4) | ✅ | 7/7; fixed a race in the encoder-restart test (checked the counter before the 1 s backoff) |
+| 2026-11-22 | `pnpm test:e2e` (Debian 12 container, Chromium) | ✅ | 9/9 Playwright flows against the demo stack (login/RBAC, playout, schedule, media, requests, events, live studio, listen page) |
+| 2026-11-22 | `shellcheck -S warning scripts/*.sh` | ✅ | clean |
+| 2026-11-22 | `pnpm audit --audit-level high` | ✅ | 0 unignored; GHSA-mrhx-c7xc-m3w5 (zod 3) ignored with mitigation, see security review |
+| 2026-11-22 | `gitleaks detect` (full history) | ✅ | 18 commits, no leaks |
 
 ## Blockers / open decisions
 
@@ -293,8 +301,13 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 
 ## Next up
 
-1. **M12–M15** — deployment (install/upgrade/uninstall scripts, systemd units, nginx + TLS, Icecast config CLI), CI integration + E2E jobs, docs (admin guide, API, runbook), NOTICE/licensing, launch checklist.
-2. **Needs the real environment:** M0.5 Stereo Tool flags with the licensed `stereotool_cmd` (args configurable in `stereotool.args`), PHP golden diff for the generator (needs the playlist_maker source), 24 h soak + Firefox/Safari HLS on the Debian 13 LXC.
+1. **Production host:** run `install.sh` on the Debian 13 LXC and work through
+   `docs/launch-checklist.md` (TLS, Stereo Tool flags → ADR 0002, media scan, first plans,
+   reboot, restore drill, 24 h soak, browser check, sign-off).
+2. **Repository:** enable branch protection on `main` requiring the CI jobs.
+3. **Still needs external input:** PHP golden diff for the generator (playlist_maker source),
+   M0.5 Stereo Tool flags (licensed binary), Firefox/Safari HLS on a public host.
+4. **Post-launch:** migrate zod 3 → 4 and drop the audit exception.
 
 ## M12–M14 — Operations, deployment, testing (2026-11-22)
 

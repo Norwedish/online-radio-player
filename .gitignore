@@ -12,20 +12,26 @@ coverage/
 config/station.json
 config/secrets.env
 
-# Runtime data
-data/
-logs/
-media/
-recordings/
-backups/
-hls/
-artwork/
+# Runtime data (anchored to the repo root: unanchored `media/` once hid
+# apps/api/src/services/media/ from git)
+/data/
+/logs/
+/media/
+/recordings/
+/backups/
+/hls/
+/artwork/
 
 # Thimeo Stereo Tool is commercial; never commit binaries, presets or licenses
+# (match binaries/archives only: an unanchored `stereotool*` once hid
+# apps/playout/src/stereotool/ from git)
 *.lic
 *.sds
-stereotool*
 !config/stereotool.example.sds
+/stereotool_cmd*
+/stereotool_*.zip
+/stereotool_*.tar.gz
+/vendor/stereotool/
 
 # Editor / OS
 .DS_Store

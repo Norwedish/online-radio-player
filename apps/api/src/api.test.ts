@@ -797,3 +797,27 @@ describe("WebSocket (M6.2)", () => {
     anon.close();
   });
 });
+
+describe("readiness (M12.6)", () => {
+  it("fails while the worker is down and recovers when it comes back", async () => {
+    const port = fake.port;
+    await fake.close();
+    const t0 = Date.now();
+    while (ctx.worker.connected && Date.now() - t0 < 5000)
+      await new Promise((r) => setTimeout(r, 50));
+    const down = await app.inject({ url: "/api/ready" });
+    expect(down.statusCode).toBe(503);
+    expect(down.json()).toMatchObject({ status: "not_ready", checks: { worker: { ok: false } } });
+    fake = new ProtocolServer((type, payload) => {
+      commands.push({ type, payload });
+      return fakeState();
+    });
+    await fake.listen({ port });
+    const t1 = Date.now();
+    while (!ctx.worker.connected && Date.now() - t1 < 15_000)
+      await new Promise((r) => setTimeout(r, 100));
+    const up = await app.inject({ url: "/api/ready" });
+    expect(up.statusCode).toBe(200);
+    expect(up.json().checks.worker.ok).toBe(true);
+  }, 30_000);
+});

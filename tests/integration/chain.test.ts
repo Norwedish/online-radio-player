@@ -138,9 +138,13 @@ describe.skipIf(!hasIcecast)("audio chain with real Icecast (M4.8/M5)", () => {
   it("restarts a killed encoder and the mount comes back", async () => {
     const enc = worker.hub.encoders.get("mobile.mp3")!;
     enc.kill();
-    await new Promise((r) => setTimeout(r, 300));
-    await icecast.waitForMounts(["mobile.mp3"], 15_000);
+    // The first restart is scheduled after a 1 s backoff; Icecast may still list the old
+    // mount until then, so wait for the restart itself before checking the mount.
+    const t0 = Date.now();
+    while (enc.restarts < 1 && Date.now() - t0 < 10_000)
+      await new Promise((r) => setTimeout(r, 100));
     expect(enc.restarts).toBeGreaterThanOrEqual(1);
+    await icecast.waitForMounts(["mobile.mp3"], 15_000);
     expect((await icecast.sample("mobile.mp3", 1.5)).meanDb).toBeGreaterThan(-30);
   }, 30_000);
 
