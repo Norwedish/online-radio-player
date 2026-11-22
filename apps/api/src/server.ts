@@ -34,7 +34,9 @@ export async function buildServer(
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: options.logger ?? false,
-    trustProxy: true,
+    // Only the local reverse proxy (nginx) is trusted; a client-supplied X-Forwarded-For
+    // from anywhere else is ignored, so rate limits cannot be dodged by spoofing it.
+    trustProxy: process.env.TRUST_PROXY ?? "127.0.0.1,::1",
     bodyLimit: 1024 * 1024,
     disableRequestLogging: true,
   });

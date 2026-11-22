@@ -192,6 +192,21 @@ describe("system", () => {
     expect(Object.keys(doc.paths).length).toBeGreaterThan(80);
   });
 
+  it("rejects oversized arrays before validation and caps returned issues", async () => {
+    const huge = await as(admin, "POST", "/api/media/duplicates/merge", {
+      keepId: 1,
+      removeIds: Array(30_000).fill("x"),
+    });
+    expect(huge.statusCode).toBe(400);
+    expect(huge.json().error.message).toMatch(/limited to 20000/);
+    const bad = await as(admin, "POST", "/api/media/duplicates/merge", {
+      keepId: 1,
+      removeIds: Array(900).fill("x"),
+    });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error.details.length).toBeLessThanOrEqual(20);
+  });
+
   it("exposes Prometheus metrics", async () => {
     const res = await app.inject({ url: "/metrics" });
     expect(res.headers["content-type"]).toMatch(/text\/plain/);
@@ -585,6 +600,30 @@ describe("requests (M6.4/M11.3)", () => {
         })
       ).statusCode,
     ).toBe(400);
+  });
+
+  it("keys request cooldowns on the real client IP, ignoring spoofed X-Forwarded-For", async () => {
+    ctx.repos.media.upsert({
+      path: "/lib/xff.mp3",
+      title: "Spoof Test",
+      artist: "XFF",
+      duration: 200,
+      status: "ok",
+    });
+    const send = (remoteAddress: string, xff: string) =>
+      app.inject({
+        method: "POST",
+        url: "/api/public/requests",
+        remoteAddress,
+        headers: { "x-forwarded-for": xff },
+        payload: { artist: "XFF", title: "Spoof Test" },
+      });
+    // Direct client (not the local proxy): its own X-Forwarded-For is ignored.
+    expect((await send("2.2.2.2", "7.7.7.7")).statusCode).toBe(201);
+    expect((await send("2.2.2.2", "8.8.8.8")).statusCode).toBe(429);
+    // Through nginx on loopback: the right-most hop nginx appended is the client.
+    expect((await send("127.0.0.1", "6.6.6.6, 3.3.3.3")).statusCode).toBe(201);
+    expect((await send("127.0.0.1", "1.1.1.1, 3.3.3.3")).statusCode).toBe(429);
   });
 });
 

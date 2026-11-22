@@ -295,3 +295,28 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 
 1. **M12–M15** — deployment (install/upgrade/uninstall scripts, systemd units, nginx + TLS, Icecast config CLI), CI integration + E2E jobs, docs (admin guide, API, runbook), NOTICE/licensing, launch checklist.
 2. **Needs the real environment:** M0.5 Stereo Tool flags with the licensed `stereotool_cmd` (args configurable in `stereotool.args`), PHP golden diff for the generator (needs the playlist_maker source), 24 h soak + Firefox/Safari HLS on the Debian 13 LXC.
+
+## M12–M14 — Operations, deployment, testing (2026-11-22)
+
+- **Deployment (M13):** `scripts/install.sh` (idempotent; Debian 13 target, `--staging`, `--skip-certbot`,
+  `--stereotool-bypass`, `--dry-run`), `upgrade.sh` (backup → sync → build → migrate → restart → smoke test),
+  `uninstall.sh` (`--purge`), `backup.sh`/`restore.sh` on the pnpm CLI, expanded `smoke-test.sh`
+  (health, readiness, every mount decoded for audible audio, public API, UI, HLS). systemd units,
+  nginx template (CSP, WebSocket, stream proxy), `pnpm icecast:config`.
+- **Verified in a clean container:** fresh install in 30 s → services up → smoke test green; re-run idempotent;
+  upgrade green; uninstall/purge clean. Fixed on the way: stale `.tsbuildinfo` skipping the build, hard-coded
+  `/usr/bin/node` in units, `/etc/radio` not traversable for icecast2, app dir mode leaking from the source
+  checkout (nginx 500), IPv6-less containers, `.sh` files not executable in git.
+- **Backup/restore drill (M15.4):** live DB overwritten with garbage → `restore.sh` → audible on all mounts in
+  **19.5 s RTO**; RPO = last backup (daily 03:15, plus the pre-upgrade backup). Safety copy of the broken file kept.
+- **Load test (M14.6):** `pnpm load:test` — 500 listeners via nginx, 200 WebSockets, 100 req/s public API for 60 s:
+  **p95 6.8 ms, p99 12.6 ms, 0 errors, 0 starved listeners, ready throughout**; API 10 % CPU / 136 MB.
+- **Security fixes:** `trustProxy` now trusts only loopback (spoofed `X-Forwarded-For` could bypass login and
+  request rate limits); tests/dev no longer fall back to `/etc/radio/station.json` (the test suite opened the
+  installed production DB); oversized arrays rejected before zod (GHSA-mrhx-c7xc-m3w5 mitigation) and
+  validation details capped; nginx CSP. Audit: vitest → 4.1.12, esbuild override; zod 3 advisory documented.
+- **Bug found by new tests:** listener-stats chart buckets were never applied (REAL division in SQLite).
+- **Monitoring (M12.2):** Grafana dashboard JSON + Prometheus scrape example; optional `METRICS_TOKEN`.
+- **CI (M14.4):** verify (lint, typecheck, coverage-gated tests, build, shellcheck), integration (real Icecast),
+  e2e (Playwright), audit (`pnpm audit --audit-level high`, gitleaks). Coverage on `packages/*`: 85 % lines.
+- **Tests:** 157 unit/API (+RFC 6238 TOTP vectors, ops repos, Icecast config, runtime resolution).

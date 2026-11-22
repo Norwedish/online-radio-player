@@ -79,7 +79,32 @@ export function audit(
   });
 }
 
+/** Largest array any route accepts (bulk playlist edits); see MAX_ARRAY_LENGTH guard below. */
+export const MAX_ARRAY_LENGTH = 20_000;
+
+/**
+ * zod 3 validates every element of an array even after a `.max()` failed and keeps one
+ * issue per failing element (GHSA-mrhx-c7xc-m3w5), so oversized arrays are rejected here,
+ * before validation. With the 1 MiB body limit this bounds the cost of a bad request.
+ */
+function assertBoundedArrays(value: unknown, depth = 0): void {
+  if (depth > 8 || value === null || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    if (value.length > MAX_ARRAY_LENGTH)
+      throw new HttpError(
+        400,
+        "validation_error",
+        `arrays are limited to ${MAX_ARRAY_LENGTH} items`,
+      );
+    for (const v of value)
+      if (v !== null && typeof v === "object") assertBoundedArrays(v, depth + 1);
+    return;
+  }
+  for (const v of Object.values(value)) assertBoundedArrays(v, depth + 1);
+}
+
 export function parse<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
+  assertBoundedArrays(value);
   return schema.parse(value ?? {});
 }
 
@@ -95,7 +120,9 @@ export function sendError(
       error: {
         code: "validation_error",
         message: "invalid request",
-        details: error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        details: error.issues
+          .slice(0, 20)
+          .map((i) => ({ path: i.path.join("."), message: i.message })),
       },
     });
   }

@@ -1,0 +1,11 @@
+# Add to prometheus.yml scrape_configs. /api/metrics is open unless METRICS_TOKEN is set
+# in /etc/radio/secrets.env; set it whenever Prometheus scrapes over the network.
+- job_name: radio
+  scrape_interval: 15s
+  metrics_path: /api/metrics
+  scheme: https
+  authorization:
+    type: Bearer
+    credentials_file: /etc/prometheus/radio-metrics-token # same value as METRICS_TOKEN
+  static_configs:
+    - targets: ["radio.example.org"]

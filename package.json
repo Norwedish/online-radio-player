@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "config:validate": "tsx scripts/validate-config.ts",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "spike:chain": "node scripts/spike-ffmpeg-chain.mjs",
@@ -40,19 +41,34 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "bench:chain": "tsx scripts/bench-chain.ts",
     "demo": "tsx scripts/demo-stack.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icecast:config": "tsx scripts/icecast-config.ts",
+    "start:api": "node apps/api/dist/index.js",
+    "start:playout": "node apps/playout/dist/index.js",
+    "load:test": "tsx scripts/load-test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@playwright/test": "^1.65.1",
     "@types/node": ">=22",
+    "@vitest/coverage-v8": "4.1.12",
     "eslint": "^9.0.0",
     "globals": "^16.0.0",
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0",
-    "vitest": "^3.0.0",
+    "vitest": "^4.1.12",
     "ws": "^8.23.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@esbuild-kit/core-utils>esbuild": "^0.25.0"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-mrhx-c7xc-m3w5"
+      ]
+    }
   }
 }

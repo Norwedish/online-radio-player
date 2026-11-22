@@ -719,11 +719,12 @@ export class ListenerStatsRepository {
     until: string,
     bucketMinutes = 5,
   ): { ts: string; mount: string; listeners: number }[] {
-    // Bucket by truncating the ISO timestamp to the bucket size in SQL.
+    // Bucket by truncating the ISO timestamp to the bucket size in SQL. better-sqlite3 binds
+    // JS numbers as REAL, so @s is cast explicitly to keep the division integral.
     const seconds = Math.max(1, bucketMinutes) * 60;
     return this.db
       .prepare(
-        `SELECT strftime('%Y-%m-%dT%H:%M:00Z', (CAST(strftime('%s', ts) AS INTEGER) / @s) * @s, 'unixepoch') AS bucket, mount, MAX(listeners) AS listeners
+        `SELECT strftime('%Y-%m-%dT%H:%M:00Z', (CAST(strftime('%s', ts) AS INTEGER) / CAST(@s AS INTEGER)) * CAST(@s AS INTEGER), 'unixepoch') AS bucket, mount, MAX(listeners) AS listeners
          FROM listener_stats WHERE station_id = @sid AND ts >= @since AND ts < @until GROUP BY bucket, mount ORDER BY bucket`,
       )
       .all({ s: seconds, sid: this.stationId, since, until })

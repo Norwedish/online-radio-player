@@ -14,5 +14,14 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "**/*.spec.ts"],
     environment: "node",
     reporters: ["default"],
+    // `pnpm test:coverage` (CI): PLAN M14.1 asks for ≥ 80 % lines on packages/*.
+    coverage: {
+      provider: "v8",
+      include: ["packages/*/src/**/*.ts"],
+      // schema.ts is declarative drizzle DDL; its callbacks only run inside drizzle-kit.
+      exclude: ["**/*.test.ts", "packages/db/src/schema.ts"],
+      reporter: ["text-summary", "html"],
+      thresholds: { lines: 80, statements: 80, functions: 75, branches: 65 },
+    },
   },
 });

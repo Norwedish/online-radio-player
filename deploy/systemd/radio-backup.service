@@ -1,0 +1,13 @@
+[Unit]
+Description=Radio database backup (online .backup + verify + rotation)
+
+[Service]
+Type=oneshot
+User=radio
+Group=radio
+WorkingDirectory=/srv/radio/app
+EnvironmentFile=/etc/radio/secrets.env
+Environment=NODE_ENV=production
+Environment=PATH=__NODE_DIR__:/usr/local/bin:/usr/bin:/bin
+Environment=RADIO_CONFIG=/etc/radio/station.json
+ExecStart=/srv/radio/app/scripts/backup.sh

@@ -138,7 +138,7 @@ export async function scheduleRoutes(app: FastifyInstance, ctx: AppContext): Pro
       const body = parse(
         z.object({
           date: dateParam.optional(),
-          hours: z.array(z.number().int().min(0).max(23)).optional(),
+          hours: z.array(z.number().int().min(0).max(23)).max(24).optional(),
           dryRun: z.boolean().default(false),
           force: z.boolean().default(false),
         }),

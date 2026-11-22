@@ -5,7 +5,9 @@
  * `config/station.example.json` in development) → schema validation → env
  * overrides for paths that differ between the Debian target and a dev box
  * (DATABASE_URL, MEDIA_ROOT, DATA_DIR, ...). Secrets are always read from the
- * environment (optionally loaded from `/etc/radio/secrets.env` or `.env`).
+ * environment (optionally loaded from `.env`, or `/etc/radio/secrets.env` when
+ * NODE_ENV=production). `/etc/radio/station.json` is likewise only an implicit
+ * fallback in production; everywhere else pass RADIO_CONFIG explicitly.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -72,13 +74,17 @@ export function loadRuntimeConfig(
 ): RuntimeConfig {
   const env = options.env ?? process.env;
   const rootDir = options.rootDir ?? env.RADIO_ROOT ?? findRepoRoot();
-  loadEnvFile(env.RADIO_SECRETS ?? "/etc/radio/secrets.env", env);
+  // The system-wide files are only picked up implicitly in production, so tests and
+  // dev runs on an installed box can never open the live database or its secrets.
+  const production = env.NODE_ENV === "production";
+  const secretsFile = env.RADIO_SECRETS ?? (production ? "/etc/radio/secrets.env" : undefined);
+  if (secretsFile) loadEnvFile(secretsFile, env);
   loadEnvFile(join(rootDir, ".env"), env);
 
   const candidates = [
     env.RADIO_CONFIG,
     join(rootDir, "config/station.json"),
-    "/etc/radio/station.json",
+    production ? "/etc/radio/station.json" : undefined,
     join(rootDir, "config/station.example.json"),
   ].filter((c): c is string => Boolean(c));
   const configFile = candidates.find((c) => existsSync(c));

@@ -1,0 +1,17 @@
+# gitleaks configuration (CI audit job). Extends the default rules; the only allowlisted
+# paths hold dummy credentials for local test stacks, never real secrets.
+title = "radio gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and demo stack with throwaway credentials"
+paths = [
+  '''tests/.*''',
+  '''.*\.test\.ts$''',
+  '''.*/test-utils\.ts$''',
+  '''scripts/demo-stack\.ts$''',
+  '''config/icecast\.dev\.xml$''',
+  '''pnpm-lock\.yaml$''',
+]

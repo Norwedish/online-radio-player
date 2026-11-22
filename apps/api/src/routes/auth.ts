@@ -343,7 +343,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       const body = parse(
         z.object({
           name: z.string().min(1).max(80),
-          scopes: z.array(z.enum(API_KEY_SCOPES)).min(1),
+          scopes: z.array(z.enum(API_KEY_SCOPES)).min(1).max(API_KEY_SCOPES.length),
         }),
         req.body,
       );

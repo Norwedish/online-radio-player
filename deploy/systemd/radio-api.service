@@ -1,0 +1,28 @@
+# radio-api: REST/WS control API, auth, public API, background jobs, single DB writer.
+[Unit]
+Description=Radio API (control panel, public API, jobs)
+After=network-online.target radio-playout.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=radio
+Group=radio
+WorkingDirectory=/srv/radio/app
+EnvironmentFile=/etc/radio/secrets.env
+Environment=NODE_ENV=production
+Environment=RADIO_CONFIG=/etc/radio/station.json
+Environment=PLAYOUT_SOCKET=/run/radio/playout.sock
+ExecStart=/usr/bin/node apps/api/dist/index.js
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+# Hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/srv/radio /run/radio
+
+[Install]
+WantedBy=multi-user.target

@@ -120,7 +120,10 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
     },
     async (req) => {
       const body = parse(
-        z.object({ keepId: z.number().int(), removeIds: z.array(z.number().int()).min(1) }),
+        z.object({
+          keepId: z.number().int(),
+          removeIds: z.array(z.number().int()).min(1).max(1000),
+        }),
         req.body,
       );
       repos.media.mergeDuplicates(body.keepId, body.removeIds);
