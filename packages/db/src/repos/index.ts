@@ -15,6 +15,7 @@ import {
 import { ScheduleRepository } from "./schedule.js";
 import {
   ApiKeyRepository,
+  DeviceGrantRepository,
   PasswordResetRepository,
   SessionRepository,
   UserRepository,
@@ -34,6 +35,7 @@ export interface Repositories {
   sessions: SessionRepository;
   passwordResets: PasswordResetRepository;
   apiKeys: ApiKeyRepository;
+  devices: DeviceGrantRepository;
   audit: AuditRepository;
   media: MediaRepository;
   playlists: PlaylistRepository;
@@ -58,6 +60,7 @@ export function createRepositories(db: Database.Database, stationId = 1): Reposi
     sessions: new SessionRepository(db),
     passwordResets: new PasswordResetRepository(db),
     apiKeys: new ApiKeyRepository(db, stationId),
+    devices: new DeviceGrantRepository(db),
     audit: new AuditRepository(db, stationId),
     media: new MediaRepository(db, stationId),
     playlists: new PlaylistRepository(db, stationId),

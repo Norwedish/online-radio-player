@@ -1,4 +1,4 @@
-/** Retention jobs (PLAN M12.5): history 90 d, requests 30 d, listener stats, sessions. */
+/** Retention jobs (PLAN M12.5): history 90 d, requests 30 d, listener stats, sessions, app devices. */
 import type Database from "better-sqlite3";
 
 export interface RetentionPolicy {
@@ -15,6 +15,7 @@ export interface RetentionReport {
   requests: number;
   rateLimits: number;
   sessions: number;
+  deviceGrants: number;
   passwordResets: number;
   boundaryEvents: number;
   generatorRuns: number;
@@ -48,6 +49,14 @@ export function runRetention(
         "DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
       )
       .run(nowIso, logs).changes,
+    // App devices: revoked/expired grants are kept as long as logs, unused pairing codes a day.
+    deviceGrants: db
+      .prepare(
+        "DELETE FROM device_grants WHERE (revoked_at IS NOT NULL AND revoked_at < @logs) " +
+          "OR (refresh_expires_at IS NOT NULL AND refresh_expires_at < @logs) " +
+          "OR (refresh_hash IS NULL AND revoked_at IS NULL AND pairing_expires_at < @day)",
+      )
+      .run({ logs, day: daysAgo(now, 1) }).changes,
     passwordResets: db.prepare("DELETE FROM password_resets WHERE expires_at < ?").run(logs)
       .changes,
     boundaryEvents: db.prepare("DELETE FROM boundary_events WHERE occurred_at < ?").run(history)

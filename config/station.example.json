@@ -180,7 +180,14 @@
     "totpAllowed": true,
     "sessionHours": 12,
     "emailResetEnabled": true,
-    "passwordMinLength": 12
+    "passwordMinLength": 12,
+    "appTokens": {
+      "enabled": true,
+      "accessTokenMinutes": 60,
+      "refreshTokenDays": 90,
+      "pairingCodeMinutes": 10,
+      "maxDevicesPerUser": 10
+    }
   },
   "web": {
     "publicBaseUrl": "https://radio.example.com/listen",

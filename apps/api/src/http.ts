@@ -14,6 +14,8 @@ export const CSRF_COOKIE = "radio_csrf";
 export interface AuthState {
   user: PublicUser | null;
   sessionId: number | null;
+  /** Set when the request authenticated with an app bearer token (device grant id). */
+  deviceId: number | null;
   csrf: string | null;
   apiKey: { id: number; scopes: string[]; name: string } | null;
 }
@@ -74,7 +76,9 @@ export function audit(
     entityId: entityId ?? null,
     metadata: req.auth.apiKey
       ? { ...(metadata as object | undefined), apiKey: req.auth.apiKey.name }
-      : metadata,
+      : req.auth.deviceId
+        ? { ...(metadata as object | undefined), deviceId: req.auth.deviceId }
+        : metadata,
     ip: req.ip,
   });
 }

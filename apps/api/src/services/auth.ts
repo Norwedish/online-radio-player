@@ -27,7 +27,10 @@ export class AuthError extends Error {
       | "totp_invalid"
       | "account_disabled"
       | "weak_password"
-      | "invalid_token",
+      | "invalid_token"
+      | "token_reused"
+      | "app_access_disabled"
+      | "too_many_devices",
     message: string,
     readonly statusCode = 401,
   ) {
@@ -68,17 +71,7 @@ export class AuthService {
     ip: string;
     userAgent: string | null;
   }): Promise<{ user: PublicUser; token: string; csrf: string; expiresAt: string }> {
-    const user = this.repos.users.findByLogin(input.login.trim());
-    const ok = user
-      ? await verifyPassword(user.password_hash, input.password)
-      : (await verifyPassword(await DUMMY_HASH_PROMISE, input.password), false);
-    if (!user || !ok) throw new AuthError("invalid_credentials", "invalid username or password");
-    if (!user.is_active) throw new AuthError("account_disabled", "account is disabled", 403);
-    if (user.totp_enabled && user.totp_secret) {
-      if (!input.totp) throw new AuthError("totp_required", "two-factor code required");
-      if (!this.verifySecondFactor(user, input.totp))
-        throw new AuthError("totp_invalid", "invalid two-factor code");
-    }
+    const user = await this.verifyCredentials(input.login, input.password, input.totp);
     const token = randomToken(32);
     const expiresAt = new Date(Date.now() + this.sessionHours * 3_600_000).toISOString();
     this.repos.sessions.create({
@@ -95,6 +88,25 @@ export class AuthService {
       csrf: csrfFor(token),
       expiresAt,
     };
+  }
+
+  /**
+   * Password (+ TOTP / recovery code) check shared by the web login and app
+   * token sign-in. Runs a dummy argon2 verify for unknown users (no timing oracle).
+   */
+  async verifyCredentials(login: string, password: string, totp?: string): Promise<UserRow> {
+    const user = this.repos.users.findByLogin(login.trim());
+    const ok = user
+      ? await verifyPassword(user.password_hash, password)
+      : (await verifyPassword(await DUMMY_HASH_PROMISE, password), false);
+    if (!user || !ok) throw new AuthError("invalid_credentials", "invalid username or password");
+    if (!user.is_active) throw new AuthError("account_disabled", "account is disabled", 403);
+    if (user.totp_enabled && user.totp_secret) {
+      if (!totp) throw new AuthError("totp_required", "two-factor code required");
+      if (!this.verifySecondFactor(user, totp))
+        throw new AuthError("totp_invalid", "invalid two-factor code");
+    }
+    return user;
   }
 
   /** TOTP code or a one-time recovery code (consumed on use). */
@@ -148,6 +160,7 @@ export class AuthService {
     this.checkPasswordPolicy(next);
     this.repos.users.update(userId, { password_hash: await hashPassword(next) });
     this.repos.sessions.revokeAllForUser(userId, keepSessionId);
+    this.repos.devices.revokeAllForUser(userId, "password_changed");
   }
 
   /* ── TOTP ────────────────────────────────────────────────────────── */
@@ -210,6 +223,7 @@ export class AuthService {
     if (!userId) throw new AuthError("invalid_token", "reset link is invalid or expired", 400);
     this.repos.users.update(userId, { password_hash: await hashPassword(password) });
     this.repos.sessions.revokeAllForUser(userId);
+    this.repos.devices.revokeAllForUser(userId, "password_reset");
     return userId;
   }
 

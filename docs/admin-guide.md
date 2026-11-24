@@ -22,6 +22,15 @@ How to run the station from the web console at `https://<domain>/admin`. Install
 Forgotten passwords: users can use _Forgot password_ on the login page (needs SMTP); an admin can
 set a new password under _Users_. Deactivating a user ends all their sessions.
 
+### Remote-control app
+
+Under _Account → Connected apps_, **Pair a device** shows a QR code and an 8-character code (valid
+10 minutes, works once). Scan it with the remote-control app and the phone is signed in as you,
+with your role; no password is typed on the phone. The same list shows each connected device and
+when it was last used, with **Sign out** per device. Changing your password signs all devices
+out. Admins can see every user's devices (`GET /api/admin/devices`). Developer details:
+[mobile-app-api.md](./mobile-app-api.md).
+
 ## 2. Media library
 
 Put audio in the media root (`/srv/radio/media`, or the NAS linked there). **Folder names decide

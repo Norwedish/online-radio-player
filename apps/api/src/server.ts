@@ -65,15 +65,21 @@ export async function buildServer(
   app.addHook("onRequest", async (req) => {
     const token = req.cookies[SESSION_COOKIE];
     const session = ctx.auth.resolveSession(token);
+    const bearer = /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1];
+    // App bearer token (`rat_…`): acts as the device's user with that user's role. Not
+    // cookie-based, so no CSRF check. A session cookie takes precedence.
+    const device = session ? null : ctx.devices.resolve(bearer, req.ip);
+    if (!session && !device && bearer?.startsWith("rat_"))
+      throw new HttpError(401, "invalid_token", "access token is invalid or expired");
     const keyHeader =
       (req.headers["x-api-key"] as string | undefined) ??
-      /^Bearer (rk_\S+)$/.exec(req.headers.authorization ?? "")?.[1] ??
-      undefined;
+      (bearer?.startsWith("rk_") ? bearer : undefined);
     req.auth = {
-      user: session?.user ?? null,
+      user: session?.user ?? device?.user ?? null,
       sessionId: session?.sessionId ?? null,
+      deviceId: device?.deviceId ?? null,
       csrf: session?.csrf ?? null,
-      apiKey: session ? null : ctx.auth.resolveApiKey(keyHeader),
+      apiKey: session || device ? null : ctx.auth.resolveApiKey(keyHeader),
     };
     // CSRF: cookie-authenticated mutations must echo the token (header == cookie == session-bound value).
     if (

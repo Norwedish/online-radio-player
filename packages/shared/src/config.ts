@@ -465,6 +465,31 @@ const metricsSchema = z
   .default({ enabled: true, path: "/metrics", listenerSampleSeconds: 30 });
 
 /** ── Auth / users ──────────────────────────────────────────────────────── */
+/** Bearer tokens for the mobile / remote-control app (device grants). */
+const APP_TOKEN_DEFAULTS = {
+  enabled: true,
+  accessTokenMinutes: 60,
+  refreshTokenDays: 90,
+  pairingCodeMinutes: 10,
+  maxDevicesPerUser: 10,
+};
+const appTokensSchema = z
+  .object({
+    enabled: z.boolean().default(true).describe("Allow apps to sign in with bearer tokens"),
+    accessTokenMinutes: z.number().int().gte(5).lte(1440).default(60),
+    refreshTokenDays: z
+      .number()
+      .int()
+      .gte(1)
+      .lte(365)
+      .default(90)
+      .describe("A device unused this long must sign in again"),
+    pairingCodeMinutes: z.number().int().gte(2).lte(60).default(10),
+    maxDevicesPerUser: z.number().int().gte(1).lte(100).default(10),
+  })
+  .strict()
+  .default(APP_TOKEN_DEFAULTS);
+
 const usersSchema = z
   .object({
     bootstrapAdminUserEnv: envName("Bootstrap admin username"),
@@ -473,6 +498,7 @@ const usersSchema = z
     sessionHours: z.number().int().gte(1).lte(240).default(12),
     emailResetEnabled: z.boolean().default(true),
     passwordMinLength: z.number().int().gte(8).lte(128).default(12),
+    appTokens: appTokensSchema,
   })
   .strict()
   .default({
@@ -482,6 +508,7 @@ const usersSchema = z
     sessionHours: 12,
     emailResetEnabled: true,
     passwordMinLength: 12,
+    appTokens: APP_TOKEN_DEFAULTS,
   });
 
 /** ── Web UI / worker plumbing ──────────────────────────────────────────── */

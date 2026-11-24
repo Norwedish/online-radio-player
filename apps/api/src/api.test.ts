@@ -798,6 +798,255 @@ describe("WebSocket (M6.2)", () => {
   });
 });
 
+describe("app tokens (remote-control app)", () => {
+  // dj1's password was changed by the password-reset test above.
+  const DJ_PW = "brand-new-pass-1";
+  let tokenIp = 0;
+  /** POST /api/auth/token from a fresh client address (the route is rate limited per IP). */
+  function token(payload: Record<string, unknown>) {
+    tokenIp += 1;
+    return app.inject({
+      method: "POST",
+      url: "/api/auth/token",
+      remoteAddress: `10.9.${Math.floor(tokenIp / 250)}.${tokenIp % 250}`,
+      payload,
+    });
+  }
+  const bearer = (accessToken: string, method: "GET" | "POST" | "DELETE", url: string) =>
+    app.inject({ method, url, headers: { authorization: `Bearer ${accessToken}` } });
+
+  it("password grant: bearer token acts as the user, with RBAC and without CSRF", async () => {
+    const res = await token({
+      grantType: "password",
+      login: "op1",
+      password: "password-12345",
+      deviceName: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const t = res.json();
+    expect(t).toMatchObject({
+      tokenType: "Bearer",
+      expiresIn: 3600,
+      refreshExpiresIn: 90 * 86_400,
+      user: { username: "op1", role: "operator" },
+    });
+    expect(t.accessToken).toMatch(/^rat_/);
+    expect(t.refreshToken).toMatch(/^rrt_/);
+    expect(t.user).not.toHaveProperty("password_hash");
+    // Stored hashed only.
+    const row = ctx.repos.devices.get(t.deviceId)!;
+    expect(row.access_hash).toBe(sha256(t.accessToken));
+    expect(JSON.stringify(row)).not.toContain(t.accessToken);
+
+    expect((await bearer(t.accessToken, "GET", "/api/auth/me")).json().user.username).toBe("op1");
+    expect((await bearer(t.accessToken, "GET", "/api/playout/state")).statusCode).toBe(200);
+    const before = commands.length;
+    expect((await bearer(t.accessToken, "POST", "/api/playout/skip")).statusCode).toBe(200);
+    expect(commands.slice(before).some((c) => c.type === "skip")).toBe(true);
+    expect((await bearer(t.accessToken, "GET", "/api/admin/users")).statusCode).toBe(403);
+    // Audited with the device id.
+    const entry = ctx.repos.audit
+      .list({ action: "playout.skip" })
+      .items.find((a) => (a.metadata as { deviceId?: number } | null)?.deviceId === t.deviceId);
+    expect(entry).toBeTruthy();
+  });
+
+  it("rejects unknown, malformed and wrong-credential requests clearly", async () => {
+    const bad = await bearer("rat_not-a-real-token", "GET", "/api/auth/me");
+    expect(bad.statusCode).toBe(401);
+    expect(bad.json().error.code).toBe("invalid_token");
+    expect(
+      (await token({ grantType: "password", login: "op1", password: "nope" })).statusCode,
+    ).toBe(401);
+    expect((await token({ grantType: "magic" })).statusCode).toBe(400);
+    expect(
+      ctx.repos.audit.list({ action: "auth.token_failed" }).items.length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("refresh rotates both tokens; reusing an old refresh token signs the device out", async () => {
+    const first = (await token({ grantType: "password", login: "dj1", password: DJ_PW })).json();
+    const second = (
+      await token({ grantType: "refresh_token", refreshToken: first.refreshToken })
+    ).json();
+    expect(second.deviceId).toBe(first.deviceId);
+    expect(second.accessToken).not.toBe(first.accessToken);
+    expect(second.refreshToken).not.toBe(first.refreshToken);
+    expect((await bearer(first.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+    expect((await bearer(second.accessToken, "GET", "/api/auth/me")).statusCode).toBe(200);
+
+    // The old refresh token shows up again → copied → revoke the device.
+    const reuse = await token({ grantType: "refresh_token", refreshToken: first.refreshToken });
+    expect(reuse.statusCode).toBe(401);
+    expect(reuse.json().error.code).toBe("token_reused");
+    expect((await bearer(second.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+    expect(
+      (await token({ grantType: "refresh_token", refreshToken: second.refreshToken })).statusCode,
+    ).toBe(401);
+    expect(ctx.repos.devices.get(first.deviceId)!.revoked_reason).toBe("refresh_token_reused");
+    expect(ctx.repos.alerts.list({}).items.some((a) => a.type === "app_token_reused")).toBe(true);
+  });
+
+  it("pairs a device with a one-time code from the web console", async () => {
+    const pair = await as(operator, "POST", "/api/auth/devices/pair", { name: "Studio tablet" });
+    expect(pair.statusCode, pair.body).toBe(201);
+    const p = pair.json();
+    expect(p.code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    expect(JSON.parse(p.qr)).toMatchObject({ type: "radio-remote-pairing", v: 1, code: p.code });
+    // Typed by hand: lower case, no dash.
+    const res = await token({
+      grantType: "pairing_code",
+      code: p.code.replace("-", "").toLowerCase(),
+      platform: "android",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const t = res.json();
+    expect(t).toMatchObject({ deviceId: p.deviceId, user: { username: "op1" } });
+    expect(ctx.repos.devices.get(p.deviceId)!.name).toBe("Studio tablet");
+    // Single use.
+    expect((await token({ grantType: "pairing_code", code: p.code })).statusCode).toBe(400);
+    // A device cannot mint pairing codes for more devices.
+    const fromDevice = await app.inject({
+      method: "POST",
+      url: "/api/auth/devices/pair",
+      headers: { authorization: `Bearer ${t.accessToken}` },
+      payload: {},
+    });
+    expect(fromDevice.statusCode).toBe(403);
+    // Listed for the owner, marked as the calling device.
+    const list = (await bearer(t.accessToken, "GET", "/api/auth/devices")).json();
+    expect(list.items.find((d: { id: number }) => d.id === p.deviceId)).toMatchObject({
+      status: "active",
+      current: true,
+      platform: "android",
+    });
+    // Signing it out from the console kills its tokens.
+    expect((await as(operator, "DELETE", `/api/auth/devices/${p.deviceId}`)).statusCode).toBe(200);
+    expect((await bearer(t.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+  });
+
+  it("users cannot remove other users' devices; admins can see and remove all", async () => {
+    const t = (await token({ grantType: "password", login: "dj1", password: DJ_PW })).json();
+    expect((await as(operator, "DELETE", `/api/auth/devices/${t.deviceId}`)).statusCode).toBe(404);
+    const all = (await as(admin, "GET", "/api/admin/devices")).json();
+    expect(
+      all.items.some(
+        (d: { id: number; username: string }) => d.id === t.deviceId && d.username === "dj1",
+      ),
+    ).toBe(true);
+    expect((await as(admin, "DELETE", `/api/auth/devices/${t.deviceId}`)).statusCode).toBe(200);
+    expect(ctx.repos.devices.get(t.deviceId)!.revoked_reason).toBe("removed_by_admin");
+  });
+
+  it("app sign-out works with the access token or with only the refresh token", async () => {
+    const a = (await token({ grantType: "password", login: "dj1", password: DJ_PW })).json();
+    expect((await bearer(a.accessToken, "POST", "/api/auth/token/revoke")).statusCode).toBe(200);
+    expect((await bearer(a.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+    const b = (await token({ grantType: "password", login: "dj1", password: DJ_PW })).json();
+    const revoke = await app.inject({
+      method: "POST",
+      url: "/api/auth/token/revoke",
+      payload: { refreshToken: b.refreshToken },
+    });
+    expect(revoke.statusCode).toBe(200);
+    expect(
+      (await token({ grantType: "refresh_token", refreshToken: b.refreshToken })).statusCode,
+    ).toBe(401);
+    // Unknown token: still OK (never reveals whether a token existed).
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/auth/token/revoke",
+          payload: { refreshToken: "rrt_unknown-token" },
+        })
+      ).statusCode,
+    ).toBe(200);
+  });
+
+  it("a password set by an admin signs all of that user's devices out", async () => {
+    const t = (await token({ grantType: "password", login: "dj1", password: DJ_PW })).json();
+    const dj1 = ctx.repos.users.findByLogin("dj1")!;
+    expect(
+      (await as(admin, "PATCH", `/api/admin/users/${dj1.id}`, { password: "password-67890" }))
+        .statusCode,
+    ).toBe(200);
+    expect((await bearer(t.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+    expect(ctx.repos.devices.get(t.deviceId)!.revoked_reason).toBe("password_set_by_admin");
+    await as(admin, "PATCH", `/api/admin/users/${dj1.id}`, { password: DJ_PW });
+  });
+
+  it("enforces the per-user device limit and the app-access switch", async () => {
+    const u = ctx.repos.users.findByLogin("op1")!;
+    ctx.repos.devices.revokeAllForUser(u.id, "test_reset");
+    const max = ctx.config.users.appTokens.maxDevicesPerUser;
+    for (let i = 0; i < max; i += 1)
+      await ctx.devices.signIn({ login: "op1", password: "password-12345", ip: "10.0.0.1" });
+    const over = await token({ grantType: "password", login: "op1", password: "password-12345" });
+    expect(over.statusCode).toBe(409);
+    expect(over.json().error.code).toBe("too_many_devices");
+    ctx.repos.devices.revokeAllForUser(u.id, "test_reset");
+
+    const t = (
+      await token({ grantType: "password", login: "op1", password: "password-12345" })
+    ).json();
+    ctx.config.users.appTokens.enabled = false;
+    try {
+      const off = await token({ grantType: "password", login: "op1", password: "password-12345" });
+      expect(off.statusCode).toBe(403);
+      expect(off.json().error.code).toBe("app_access_disabled");
+      expect((await bearer(t.accessToken, "GET", "/api/auth/me")).statusCode).toBe(401);
+    } finally {
+      ctx.config.users.appTokens.enabled = true;
+    }
+  });
+
+  it("expired access tokens are refused; the refresh token still works", async () => {
+    const t = (
+      await token({ grantType: "password", login: "op1", password: "password-12345" })
+    ).json();
+    ctx.repos.db
+      .prepare("UPDATE device_grants SET access_expires_at = ? WHERE id = ?")
+      .run(new Date(Date.now() - 1000).toISOString(), t.deviceId);
+    expect((await bearer(t.accessToken, "GET", "/api/auth/me")).json().error.code).toBe(
+      "invalid_token",
+    );
+    const r = await token({ grantType: "refresh_token", refreshToken: t.refreshToken });
+    expect(r.statusCode).toBe(200);
+    expect((await bearer(r.json().accessToken, "GET", "/api/auth/me")).statusCode).toBe(200);
+  });
+
+  it("authenticates the WebSocket with the bearer header", async () => {
+    const t = (
+      await token({ grantType: "password", login: "op1", password: "password-12345" })
+    ).json();
+    if (!app.server.listening) await app.listen({ port: 0, host: "127.0.0.1" });
+    const port = (app.server.address() as { port: number }).port;
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      headers: { authorization: `Bearer ${t.accessToken}` },
+    });
+    const hello = await new Promise<{
+      type: string;
+      data: { authenticated: boolean; channels: string[] };
+    }>((r) => ws.once("message", (d) => r(JSON.parse(String(d)))));
+    expect(hello).toMatchObject({ type: "hello", data: { authenticated: true } });
+    expect(hello.data.channels).toContain("playout");
+    ws.close();
+  });
+
+  it("documents the bearer scheme and token endpoints in OpenAPI", async () => {
+    const doc = (await app.inject({ url: "/api/docs" })).json();
+    expect(doc.components.securitySchemes.appToken).toMatchObject({
+      type: "http",
+      scheme: "bearer",
+    });
+    expect(doc.paths["/api/auth/token"].post.security).toEqual([]);
+    expect(doc.paths["/api/auth/devices/pair"]).toBeTruthy();
+  });
+});
+
 describe("readiness (M12.6)", () => {
   it("fails while the worker is down and recovers when it comes back", async () => {
     const port = fake.port;

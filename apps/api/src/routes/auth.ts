@@ -2,8 +2,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { hashPassword, toPublicUser } from "@radio/db";
-import { API_KEY_SCOPES, ROLES } from "@radio/shared";
+import { API_KEY_SCOPES, ROLES, can } from "@radio/shared";
 import type { AppContext } from "../context.js";
+import { publicDevice } from "../services/device-auth.js";
 import {
   CSRF_COOKIE,
   HttpError,
@@ -114,6 +115,204 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       const revoked = ctx.auth.logoutEverywhere(req.auth.user!.id, req.auth.sessionId ?? undefined);
       audit(ctx, req, "auth.logout_all", "user", req.auth.user!.id, { revoked });
       return { revoked };
+    },
+  );
+
+  /* ── App access tokens (mobile / remote-control apps) ───────────────── */
+
+  const deviceFields = {
+    deviceName: z.string().max(80).optional(),
+    platform: z.string().max(40).optional(),
+    appVersion: z.string().max(40).optional(),
+  };
+  const tokenBody = z.discriminatedUnion("grantType", [
+    z.object({
+      grantType: z.literal("password"),
+      login: z.string().min(1).max(200),
+      password: z.string().min(1).max(256),
+      totp: z.string().max(20).optional(),
+      ...deviceFields,
+    }),
+    z.object({
+      grantType: z.literal("pairing_code"),
+      code: z.string().min(8).max(20),
+      ...deviceFields,
+    }),
+    z.object({
+      grantType: z.literal("refresh_token"),
+      refreshToken: z.string().min(10).max(200),
+      appVersion: z.string().max(40).optional(),
+    }),
+  ]);
+
+  app.post(
+    "/api/auth/token",
+    {
+      config: {
+        rateLimit: { max: 10, timeWindow: "1 minute" },
+        summary:
+          "App sign-in: password, pairing_code or refresh_token grant → bearer access + refresh token",
+        tags: ["auth"],
+      },
+    },
+    async (req) => {
+      const body = parse(tokenBody, req.body);
+      const device = { ip: req.ip };
+      try {
+        if (body.grantType === "refresh_token") return ctx.devices.refresh({ ...body, ...device });
+        const result =
+          body.grantType === "password"
+            ? await ctx.devices.signIn({ ...body, ...device })
+            : ctx.devices.pair({ ...body, ...device });
+        ctx.repos.audit.write({
+          userId: result.user.id,
+          action: "auth.token_issued",
+          entityType: "device",
+          entityId: result.deviceId,
+          metadata: {
+            grantType: body.grantType,
+            deviceName: body.deviceName ?? null,
+            platform: body.platform ?? null,
+          },
+          ip: req.ip,
+        });
+        return result;
+      } catch (e) {
+        if (body.grantType !== "refresh_token")
+          ctx.repos.audit.write({
+            userId: null,
+            action: "auth.token_failed",
+            metadata: {
+              grantType: body.grantType,
+              login: body.grantType === "password" ? body.login.slice(0, 100) : undefined,
+              reason: (e as { code?: string }).code,
+            },
+            ip: req.ip,
+          });
+        throw e;
+      }
+    },
+  );
+
+  app.post(
+    "/api/auth/token/revoke",
+    {
+      config: {
+        rateLimit: { max: 30, timeWindow: "1 minute" },
+        summary: "App sign-out: revokes the calling device (bearer) or the given refresh token",
+        tags: ["auth"],
+      },
+    },
+    async (req) => {
+      const body = parse(
+        z.object({ refreshToken: z.string().max(200).optional() }).default({}),
+        req.body ?? {},
+      );
+      let deviceId: number | null = null;
+      let userId: number | null = null;
+      if (req.auth.deviceId) {
+        ctx.repos.devices.revoke(req.auth.deviceId, "signed_out");
+        deviceId = req.auth.deviceId;
+        userId = req.auth.user!.id;
+      } else if (body.refreshToken) {
+        const row = ctx.devices.revokeByRefresh(body.refreshToken);
+        deviceId = row?.id ?? null;
+        userId = row?.user_id ?? null;
+      }
+      if (deviceId)
+        ctx.repos.audit.write({
+          userId,
+          action: "auth.token_revoked",
+          entityType: "device",
+          entityId: deviceId,
+          ip: req.ip,
+        });
+      // Like OAuth token revocation: always OK, never reveals whether a token existed.
+      return { ok: true };
+    },
+  );
+
+  app.get(
+    "/api/auth/devices",
+    { preHandler: guard(), config: { summary: "My connected app devices", tags: ["auth"] } },
+    async (req) => ({
+      items: ctx.repos.devices.listActive(req.auth.user!.id).map((d) => ({
+        ...publicDevice(d),
+        current: d.id === req.auth.deviceId,
+      })),
+      settings: {
+        enabled: ctx.config.users.appTokens.enabled,
+        maxDevices: ctx.config.users.appTokens.maxDevicesPerUser,
+      },
+    }),
+  );
+
+  app.post(
+    "/api/auth/devices/pair",
+    {
+      preHandler: guard(),
+      config: {
+        rateLimit: { max: 10, timeWindow: "1 minute" },
+        summary: "Create a one-time pairing code (QR) for the app",
+        tags: ["auth"],
+      },
+    },
+    async (req, reply) => {
+      // Only from the signed-in web console: a device cannot mint more devices.
+      if (!req.auth.sessionId)
+        throw new HttpError(403, "forbidden", "pairing codes are created from the web console");
+      const body = parse(z.object({ name: z.string().max(80).optional() }), req.body ?? {});
+      const pairing = ctx.devices.createPairing(
+        req.auth.user!.id,
+        body.name ?? "Remote app",
+        req.ip,
+      );
+      const server = (
+        process.env.PUBLIC_BASE_URL ??
+        `${req.protocol}://${req.headers.host ?? ctx.config.station.domain}`
+      ).replace(/\/$/, "");
+      audit(ctx, req, "auth.device_pairing_created", "device", pairing.deviceId, {
+        name: body.name ?? null,
+      });
+      return reply.status(201).send({
+        ...pairing,
+        server,
+        // What the app scans: everything it needs to finish pairing.
+        qr: JSON.stringify({ type: "radio-remote-pairing", v: 1, server, code: pairing.code }),
+      });
+    },
+  );
+
+  app.delete(
+    "/api/auth/devices/:id",
+    {
+      preHandler: guard(),
+      config: { summary: "Sign out an app device (own; admins: any)", tags: ["auth"] },
+    },
+    async (req) => {
+      const { id } = parse(idParam, req.params);
+      const row = ctx.repos.devices.get(id);
+      const mine = row?.user_id === req.auth.user!.id;
+      if (!row || (!mine && !can(req.auth.user!.role, "users:manage"))) throw notFound("device");
+      ctx.repos.devices.revoke(id, mine ? "removed_by_user" : "removed_by_admin");
+      audit(ctx, req, "auth.device_revoked", "device", id, { owner: row.user_id });
+      return { ok: true };
+    },
+  );
+
+  app.get(
+    "/api/admin/devices",
+    {
+      preHandler: guard("users:manage"),
+      config: { summary: "All connected app devices", tags: ["users"] },
+    },
+    async () => {
+      const names = new Map(ctx.repos.users.list().map((u) => [u.id, u.username]));
+      return {
+        items: ctx.repos.devices
+          .listActive()
+          .map((d) => ({ ...publicDevice(d), username: names.get(d.user_id) ?? null })),
+      };
     },
   );
 
@@ -301,6 +500,13 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
       })!;
       if (body.is_active === false || body.password || (body.role && body.role !== user.role))
         ctx.repos.sessions.revokeAllForUser(id);
+      // App devices act with the user's current role on every request; credential or
+      // account changes revoke them.
+      if (body.is_active === false || body.password)
+        ctx.repos.devices.revokeAllForUser(
+          id,
+          body.password ? "password_set_by_admin" : "user_deactivated",
+        );
       audit(ctx, req, "user.update", "user", id, {
         ...body,
         password: body.password ? "(changed)" : undefined,
@@ -318,6 +524,7 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext): Promise
         throw new HttpError(409, "conflict", "you cannot deactivate yourself");
       if (!ctx.repos.users.update(id, { is_active: false })) throw notFound("user");
       ctx.repos.sessions.revokeAllForUser(id);
+      ctx.repos.devices.revokeAllForUser(id, "user_deactivated");
       audit(ctx, req, "user.deactivate", "user", id);
       return { ok: true };
     },

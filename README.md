@@ -122,6 +122,7 @@ tests/        Integration (real Icecast) and Playwright E2E; unit tests sit next
 - [`docs/admin-guide.md`](./docs/admin-guide.md) — running the station from the console.
 - [`docs/runbook.md`](./docs/runbook.md) — operations, alerts, backup/restore, budgets.
 - [`docs/api.md`](./docs/api.md) — API conventions and every endpoint (OpenAPI at `/api/docs`).
+- [`docs/mobile-app-api.md`](./docs/mobile-app-api.md) — building the Android remote-control app (tokens, pairing, endpoints, WebSocket).
 - [`docs/security-review.md`](./docs/security-review.md) — M15.1 review and accepted exceptions.
 - [`docs/launch-checklist.md`](./docs/launch-checklist.md) — go-live sign-off.
 - [`docs/adr/`](./docs/adr/) — architecture decision records.

@@ -11,6 +11,7 @@ import {
 import { secret, type RuntimeConfig } from "@radio/shared";
 import { AlertService } from "./services/alerts.js";
 import { AuthService } from "./services/auth.js";
+import { DeviceAuthService } from "./services/device-auth.js";
 import { EventBus } from "./services/bus.js";
 import { EventService } from "./services/events.js";
 import { GeneratorScheduler, GeneratorService } from "./services/generator.js";
@@ -32,6 +33,7 @@ export interface AppContext {
   mailer: Mailer;
   alerts: AlertService;
   auth: AuthService;
+  devices: DeviceAuthService;
   settings: SettingsService;
   generator: GeneratorService;
   generatorScheduler: GeneratorScheduler;
@@ -94,6 +96,22 @@ export async function createContext(
   const generatorScheduler = new GeneratorScheduler(generator, repos, log);
   const settings = new SettingsService(repos, worker);
   const auth = new AuthService(repos, config, mailer);
+  const devices = new DeviceAuthService(repos, config, auth, (e) => {
+    repos.audit.write({
+      userId: e.userId,
+      action: "auth.token_reuse_detected",
+      entityType: "device",
+      entityId: e.deviceId,
+      metadata: { device: e.device },
+      ip: e.ip,
+    });
+    void alerts.raise({
+      type: "app_token_reused",
+      severity: "warning",
+      message: `A copied app token was used for device "${e.device}"; the device was signed out`,
+      details: { userId: e.userId, deviceId: e.deviceId, ip: e.ip },
+    });
+  });
   const requests = new RequestService(repos, config, worker, bus);
   const events = new EventService(repos, worker, bus, log);
   const live = new LiveService(repos, config, worker, alerts, generator);
@@ -121,6 +139,7 @@ export async function createContext(
     mailer,
     alerts,
     auth,
+    devices,
     settings,
     generator,
     generatorScheduler,

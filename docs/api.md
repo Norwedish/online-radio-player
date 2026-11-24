@@ -13,6 +13,13 @@ response sets an HttpOnly session cookie and a readable `csrf` cookie and return
 Every state-changing request with a session cookie must send the same value in the
 `x-csrf-token` header.
 
+**App tokens (mobile / remote-control apps).** A phone app signs in with
+`POST /api/auth/token` (username + password, or a one-time pairing code from _Account → Connected
+apps_), receives a short-lived bearer access token (`rat_…`, 60 min) and a rotating refresh token
+(`rrt_…`, 90 days), and sends `Authorization: Bearer rat_…`. The request then acts as that user
+with the user's role; there is no CSRF step (no cookies). The complete guide for app developers is
+[mobile-app-api.md](./mobile-app-api.md).
+
 **API keys.** Admins create keys under _Users → API keys_ (`POST /api/admin/api-keys`). The key
 (`rk_…`) is shown once; send it as `x-api-key: rk_…` or `Authorization: Bearer rk_…`. Keys carry
 scopes instead of a role:
@@ -36,7 +43,7 @@ scopes instead of a role:
 }
 ```
 
-Common codes: `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409),
+Common codes: `unauthorized` (401), `invalid_token` (401, app token unknown/expired: refresh), `token_reused` (401, device signed out), `forbidden` (403), `not_found` (404), `conflict` (409),
 `validation_error` (400, at most 20 details), `unsupported_type` (415), `too_large` (413),
 `rate_limited` (429), `worker_unavailable` (503 when the playout worker is down).
 
@@ -80,6 +87,8 @@ and, for signed-in users, the full `playout:state`. Events then arrive as `{ "ty
 - Channels: `playout`, `live`, `alerts`, `requests` (needs `requests:moderate`), `stats`, `media`.
   Narrow them with `{ "type": "subscribe", "channels": ["playout", "alerts"] }`.
 - Keep-alive: send `{ "type": "ping" }`, receive `pong`.
+- Apps authenticate the socket with the same `Authorization: Bearer rat_…` header on the
+  handshake.
 - Anonymous sockets only receive `public:now-playing` (title/artist; news shows as "News").
 - Typical events: `playout:state`, `playout:now-playing`, `playout:track-started`, `meter`,
   `encoder:status`, `stereotool:status`, `alerts:new`, `alerts:resolved`, `requests:new`,
@@ -122,27 +131,33 @@ and, for signed-in users, the full `playout:state`. Events then arrive as `{ "ty
 
 ### Authentication, users, API keys, audit
 
-| Method | Path                        | Permission       | Purpose                                          |
-| ------ | --------------------------- | ---------------- | ------------------------------------------------ |
-| POST   | `/api/auth/login`           | `public`         | Login (username/email + password, optional TOTP) |
-| POST   | `/api/auth/logout`          | signed in        | Revoke the current session                       |
-| POST   | `/api/auth/logout-all`      | signed in        | Revoke all other sessions                        |
-| GET    | `/api/auth/me`              | signed in        | Current user                                     |
-| GET    | `/api/auth/sessions`        | signed in        | My active sessions                               |
-| POST   | `/api/auth/password/change` | signed in        | Change my password                               |
-| POST   | `/api/auth/password/forgot` | `public`         | Request a reset email                            |
-| POST   | `/api/auth/password/reset`  | `public`         | Reset password with a token                      |
-| POST   | `/api/auth/2fa/setup`       | signed in        | Start TOTP setup                                 |
-| POST   | `/api/auth/2fa/enable`      | signed in        | Confirm TOTP                                     |
-| POST   | `/api/auth/2fa/disable`     | signed in        | Disable TOTP                                     |
-| GET    | `/api/admin/users`          | `users:manage`   | List users                                       |
-| POST   | `/api/admin/users`          | `users:manage`   | Create user                                      |
-| PATCH  | `/api/admin/users/:id`      | `users:manage`   | Update user (role, email, active, password)      |
-| DELETE | `/api/admin/users/:id`      | `users:manage`   | Deactivate user                                  |
-| GET    | `/api/admin/api-keys`       | `apikeys:manage` | List API keys                                    |
-| POST   | `/api/admin/api-keys`       | `apikeys:manage` | Create API key (shown once)                      |
-| DELETE | `/api/admin/api-keys/:id`   | `apikeys:manage` | Revoke API key                                   |
-| GET    | `/api/admin/audit`          | `audit:view`     | Audit log (filterable)                           |
+| Method | Path                        | Permission              | Purpose                                                                    |
+| ------ | --------------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| POST   | `/api/auth/login`           | `public`                | Login (username/email + password, optional TOTP)                           |
+| POST   | `/api/auth/logout`          | signed in               | Revoke the current session                                                 |
+| POST   | `/api/auth/logout-all`      | signed in               | Revoke all other sessions                                                  |
+| GET    | `/api/auth/me`              | signed in               | Current user                                                               |
+| GET    | `/api/auth/sessions`        | signed in               | My active sessions                                                         |
+| POST   | `/api/auth/password/change` | signed in               | Change my password                                                         |
+| POST   | `/api/auth/password/forgot` | `public`                | Request a reset email                                                      |
+| POST   | `/api/auth/password/reset`  | `public`                | Reset password with a token                                                |
+| POST   | `/api/auth/2fa/setup`       | signed in               | Start TOTP setup                                                           |
+| POST   | `/api/auth/2fa/enable`      | signed in               | Confirm TOTP                                                               |
+| POST   | `/api/auth/2fa/disable`     | signed in               | Disable TOTP                                                               |
+| POST   | `/api/auth/token`           | `public`                | App sign-in / refresh: `password`, `pairing_code` or `refresh_token` grant |
+| POST   | `/api/auth/token/revoke`    | `public`                | App sign-out (bearer, or `refreshToken` in the body)                       |
+| GET    | `/api/auth/devices`         | signed in               | My connected app devices                                                   |
+| POST   | `/api/auth/devices/pair`    | signed in (web session) | Create a one-time pairing code + QR payload                                |
+| DELETE | `/api/auth/devices/:id`     | signed in               | Sign out an app device (own; admins: any)                                  |
+| GET    | `/api/admin/users`          | `users:manage`          | List users                                                                 |
+| POST   | `/api/admin/users`          | `users:manage`          | Create user                                                                |
+| PATCH  | `/api/admin/users/:id`      | `users:manage`          | Update user (role, email, active, password)                                |
+| DELETE | `/api/admin/users/:id`      | `users:manage`          | Deactivate user                                                            |
+| GET    | `/api/admin/api-keys`       | `apikeys:manage`        | List API keys                                                              |
+| POST   | `/api/admin/api-keys`       | `apikeys:manage`        | Create API key (shown once)                                                |
+| DELETE | `/api/admin/api-keys/:id`   | `apikeys:manage`        | Revoke API key                                                             |
+| GET    | `/api/admin/audit`          | `audit:view`            | Audit log (filterable)                                                     |
+| GET    | `/api/admin/devices`        | `users:manage`          | All connected app devices                                                  |
 
 ### Playout, live studio, events, triggers
 

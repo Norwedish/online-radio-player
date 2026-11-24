@@ -310,6 +310,22 @@ have-metadata`, `currentTime 2.94 s`, no console errors, Stop button pauses; aud
 - Dev-host caveat: FFmpeg here is a Scoop shim, so exit codes and CPU counters are unreliable
   (see ADR 0001). All CPU/latency sizing must be re-measured on the Debian 13 / 2 vCPU target.
 
+## Remote-control app API (2026-11-24)
+
+- **Device tokens** for a future Android remote: `POST /api/auth/token` with `password`,
+  `pairing_code` (QR from _Account → Connected apps_) or `refresh_token` grants. 60 min bearer
+  access token, rotating 90-day refresh token with reuse detection (device revoked +
+  `app_token_reused` alert). Tokens act as the user with their role (RBAC unchanged), no CSRF.
+  The WebSocket accepts the same bearer header. Devices are listed and revocable per user (and by
+  admins), revoked on password change/reset/deactivation, capped at 10 per user, and can be
+  switched off with `users.appTokens.enabled`.
+- New table `device_grants` (migration `0001_device_grants`), retention purge, audit entries
+  (`auth.token_issued`/`_failed`/`_revoked`, `auth.device_*`, `auth.token_reuse_detected`),
+  OpenAPI `appToken` bearer scheme. The web console gets QR codes (pairing + 2FA setup).
+- Developer guide: `docs/mobile-app-api.md`. Tests: 11 API tests (grants, RBAC/no-CSRF, refresh
+  rotation + reuse, pairing single-use, device ownership, sign-out, admin password reset, device
+  cap, kill switch, expiry, WebSocket, OpenAPI).
+
 ## Next up
 
 1. **Production host:** run `install.sh` on the Debian 13 LXC and work through

@@ -32,6 +32,8 @@ export function buildOpenApi(routes: RouteInfo[], ctx: AppContext): Record<strin
         "/api/auth/login",
         "/api/auth/password/forgot",
         "/api/auth/password/reset",
+        "/api/auth/token",
+        "/api/auth/token/revoke",
       ].includes(r.url);
     paths[url] ??= {};
     paths[url][r.method.toLowerCase()] = {
@@ -57,7 +59,7 @@ export function buildOpenApi(routes: RouteInfo[], ctx: AppContext): Record<strin
       title: `${ctx.config.station.name} API`,
       version: PROJECT_VERSION,
       description:
-        "Public listener API (now playing, schedule, history, requests) and the authenticated control API. See docs/api.md.",
+        "Public listener API (now playing, schedule, history, requests) and the authenticated control API (browser session, app bearer token or API key). See docs/api.md and docs/mobile-app-api.md.",
     },
     servers: [{ url: "/" }],
     components: {
@@ -69,6 +71,12 @@ export function buildOpenApi(routes: RouteInfo[], ctx: AppContext): Record<strin
           description: "Login session; mutations also need the x-csrf-token header",
         },
         apiKey: { type: "apiKey", in: "header", name: "x-api-key" },
+        appToken: {
+          type: "http",
+          scheme: "bearer",
+          description:
+            "App access token (rat_…) from POST /api/auth/token; acts as the signed-in user. See docs/mobile-app-api.md",
+        },
       },
       schemas: {
         Error: {
@@ -84,7 +92,7 @@ export function buildOpenApi(routes: RouteInfo[], ctx: AppContext): Record<strin
         },
       },
     },
-    security: [{ session: [] }, { apiKey: [] }],
+    security: [{ session: [] }, { appToken: [] }, { apiKey: [] }],
     paths,
   };
 }

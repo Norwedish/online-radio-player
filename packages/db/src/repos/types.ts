@@ -40,6 +40,27 @@ export interface SessionRow {
   revoked_at: string | null;
 }
 
+export interface DeviceGrantRow {
+  id: number;
+  user_id: number;
+  name: string;
+  platform: string | null;
+  app_version: string | null;
+  access_hash: string | null;
+  access_expires_at: string | null;
+  refresh_hash: string | null;
+  prev_refresh_hash: string | null;
+  refresh_expires_at: string | null;
+  pairing_hash: string | null;
+  pairing_expires_at: string | null;
+  created_ip: string | null;
+  last_ip: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
+}
+
 export interface ApiKeyRow {
   id: number;
   station_id: number;

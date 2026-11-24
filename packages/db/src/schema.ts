@@ -75,6 +75,43 @@ export const sessions = sqliteTable(
   (t) => [index("sessions_user_expires_at").on(t.user_id, t.expires_at)],
 );
 
+/**
+ * Mobile / remote-control app access (bearer tokens). One row per paired
+ * device: a short-lived access token and a rotating refresh token (both
+ * SHA-256 hashed). `prev_refresh_hash` detects refresh-token reuse (theft): the
+ * grant is revoked. A row can start as a pending pairing (code from the web
+ * console) before the app exchanges it for tokens.
+ */
+export const device_grants = sqliteTable(
+  "device_grants",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    user_id: integer()
+      .notNull()
+      .references(() => users.id),
+    name: text().notNull(),
+    platform: text(),
+    app_version: text(),
+    access_hash: text().unique("uniq_device_grants_access_hash"),
+    access_expires_at: text(),
+    refresh_hash: text().unique("uniq_device_grants_refresh_hash"),
+    prev_refresh_hash: text(),
+    refresh_expires_at: text(),
+    pairing_hash: text().unique("uniq_device_grants_pairing_hash"),
+    pairing_expires_at: text(),
+    created_ip: text(),
+    last_ip: text(),
+    last_used_at: text(),
+    created_at: text().notNull(),
+    revoked_at: text(),
+    revoked_reason: text(),
+  },
+  (t) => [
+    index("device_grants_user").on(t.user_id, t.revoked_at),
+    index("device_grants_prev_refresh").on(t.prev_refresh_hash),
+  ],
+);
+
 export const password_resets = sqliteTable("password_resets", {
   id: integer().primaryKey({ autoIncrement: true }),
   user_id: integer()
@@ -592,6 +629,7 @@ export const SCHEMA_TABLE_NAMES = [
   "audit_log",
   "backups",
   "boundary_events",
+  "device_grants",
   "events",
   "generator_runs",
   "hourly_plans",

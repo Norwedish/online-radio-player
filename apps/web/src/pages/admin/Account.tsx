@@ -5,6 +5,8 @@ import { useAuth } from "../../hooks/auth";
 import { errorMessage, get, post } from "../../lib/api";
 import { ago } from "../../lib/format";
 import { Badge, Button, Field, Input, Panel, PageHeader } from "../../components/ui";
+import { ConnectedApps } from "../../components/ConnectedApps";
+import { QrCode } from "../../components/QrCode";
 
 export default function Account() {
   const { user, refresh } = useAuth();
@@ -150,9 +152,10 @@ export default function Account() {
               }}
             >
               <p className="text-sm text-muted">
-                Add this account to your authenticator app with the key below (or open the link on
-                your phone), then enter the 6-digit code.
+                Scan the QR code with your authenticator app (or enter the key below), then enter
+                the 6-digit code.
               </p>
+              <QrCode text={setup.otpauthUrl} size={180} label="Authenticator QR code" />
               <code className="break-all rounded-md border border-line bg-desk p-2 text-sm">
                 {setup.secret}
               </code>
@@ -223,6 +226,8 @@ export default function Account() {
             ))}
           </ul>
         </Panel>
+
+        <ConnectedApps className="lg:col-span-2" />
       </div>
     </>
   );
