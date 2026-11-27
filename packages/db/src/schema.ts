@@ -192,8 +192,18 @@ export const media = sqliteTable(
     gain_db: real(),
     cue_in: real(),
     cue_out: real(),
+    /** File time (seconds) where the intro ends / vocals start (studio intro timer). */
+    intro_end: real(),
+    /** File time (seconds) where the outro starts (studio outro timer). */
+    outro_start: real(),
     fade_in: real(),
     fade_out: real(),
+    /** Last automatic cue result (JSON) from the loudness analysis. */
+    autocue_json: text(),
+    /** Momentary loudness envelope every 100 ms (base64; see @radio/core). */
+    loudness_envelope: text(),
+    /** 'auto' lets analysis set the cue/fade points; 'manual' keeps the user's values. */
+    cue_source: text().default("auto"),
     artwork_path: text(),
     hash: text(),
     size: integer(),

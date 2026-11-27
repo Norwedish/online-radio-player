@@ -162,6 +162,14 @@ export function loadRuntimeConfig(
   };
 }
 
+/**
+ * Stereo Tool licence key file (set by `install.sh --stereotool-key` or the console);
+ * it wins over the env var so a key entered in the console takes effect.
+ */
+export function stereotoolKeyFile(dataDir: string): string {
+  return join(dataDir, "var/stereotool/license.key");
+}
+
 /** Reads a secret by env-var name (never logged). */
 export function secret(name: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   const value = env[name];

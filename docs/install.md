@@ -105,10 +105,13 @@ worker starts a small host process (`apps/playout/bin/stereotool-host.mjs`) that
 `stereotool.library` and processes the station's 48 kHz stereo PCM with the preset in
 `stereotool.preset`. This is the same API Liquidsoap's `stereotool` operator uses (ADR 0002).
 
-1. **Licence key:** put it in `/etc/radio/secrets.env` as `STEREOTOOL_LICENSE_KEY=…` (the name is
-   `stereotool.licenseKeyEnv`). Without a valid key the library still runs but adds beeps/voice to
-   the audio; the console then shows Stereo Tool as **unlicensed** and raises the
-   `stereotool_unlicensed` alert.
+1. **Licence key:** pass it to the installer with `--stereotool-key KEY` (or `--stereotool-key
+@key.txt` to keep it out of your shell history), or paste it later in _Settings → Outputs →
+   Stereo Tool_, which restarts Stereo Tool with it at once. Both store it with mode 600 in
+   `/srv/radio/var/stereotool/license.key`; that file wins over `STEREOTOOL_LICENSE_KEY` in
+   `/etc/radio/secrets.env` (still supported). Without a valid key the library still runs but
+   adds beeps/voice to the audio; the console then shows Stereo Tool as **unlicensed** and raises
+   the `stereotool_unlicensed` alert.
 2. **Preset:** export your preset from Stereo Tool as `.sts` and install it as
    `/etc/radio/stereotool.sts` (`--preset`, or copy it with mode 600 owned by `radio`).
    `stereotool.presetLoadType` picks which parts load (default `totalinit`, like Liquidsoap and

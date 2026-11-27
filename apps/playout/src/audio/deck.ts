@@ -42,12 +42,25 @@ export class Deck extends EventEmitter {
   private rampTo = 1;
   private rampFrames = 0;
   private rampPos = 0;
+  /** Frames to wait before the ramp starts (crossfade hold). */
+  private rampDelay = 0;
+  /** Built-in fade lengths; a crossfade can switch them off. */
+  private fadeInSec: number;
+  private fadeOutSec: number;
 
   constructor(
     readonly source: DeckSource,
     readonly id: string = Math.random().toString(36).slice(2),
   ) {
     super();
+    this.fadeInSec = source.fadeIn;
+    this.fadeOutSec = source.fadeOut;
+  }
+
+  /** Replaces the built-in fade-in / fade-out (e.g. 0 when a crossfade takes over). */
+  setFades(f: { fadeIn?: number; fadeOut?: number }): void {
+    if (f.fadeIn !== undefined) this.fadeInSec = Math.max(0, f.fadeIn);
+    if (f.fadeOut !== undefined) this.fadeOutSec = Math.max(0, f.fadeOut);
   }
 
   /** Effective length in seconds (cue-out applied). */
@@ -166,7 +179,7 @@ export class Deck extends EventEmitter {
       if ((f & 63) === 0) {
         const t = pos0 + f / SAMPLE_RATE;
         gain =
-          trackGainAt(t, dur, this.source.fadeIn, this.source.fadeOut, this.source.gainDb) *
+          trackGainAt(t, dur, this.fadeInSec, this.fadeOutSec, this.source.gainDb) *
           this.rampGainAt(f) *
           busGain;
       }
@@ -198,25 +211,32 @@ export class Deck extends EventEmitter {
 
   private rampGainAt(offsetFrames: number): number {
     if (this.rampFrames <= 0) return this.rampTo;
-    const p = Math.min(1, (this.rampPos + offsetFrames) / this.rampFrames);
+    const pos = this.rampPos + offsetFrames - this.rampDelay;
+    if (pos <= 0) return this.rampFrom;
+    const p = Math.min(1, pos / this.rampFrames);
     return this.rampFrom + (this.rampTo - this.rampFrom) * p;
   }
 
   private advanceRamp(frames: number): void {
     if (this.rampFrames <= 0) return;
     this.rampPos += frames;
-    if (this.rampPos >= this.rampFrames) {
+    if (this.rampPos >= this.rampDelay + this.rampFrames) {
       this.rampFrames = 0;
+      this.rampDelay = 0;
       this.rampFrom = this.rampTo;
       if (this.rampTo === 0) this.emit("faded");
     }
   }
 
-  /** Linear fade of the deck's extra gain (used for 150 ms boundary cuts and manual fades). */
-  fadeTo(gain: number, ms: number): void {
+  /**
+   * Linear fade of the deck's extra gain (150 ms boundary cuts, manual fades, crossfades),
+   * optionally starting after `delayMs`.
+   */
+  fadeTo(gain: number, ms: number, delayMs = 0): void {
     this.rampFrom = this.rampGain();
     this.rampTo = gain;
     this.rampFrames = Math.max(1, Math.round((ms / 1000) * SAMPLE_RATE));
+    this.rampDelay = Math.max(0, Math.round((delayMs / 1000) * SAMPLE_RATE));
     this.rampPos = 0;
   }
 

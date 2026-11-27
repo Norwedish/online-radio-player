@@ -7,10 +7,11 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type Ref,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
-import { Loader2, X } from "lucide-react";
+import { Info, Loader2, X } from "lucide-react";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(" ");
@@ -104,7 +105,9 @@ function fieldClass(extra: string, className?: string): string {
   );
 }
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input(
+  props: InputHTMLAttributes<HTMLInputElement> & { ref?: Ref<HTMLInputElement> },
+) {
   return <input {...props} className={fieldClass("h-9", props.className)} />;
 }
 
@@ -120,23 +123,82 @@ export function Select({ children, ...props }: SelectHTMLAttributes<HTMLSelectEl
   );
 }
 
+/**
+ * ⓘ button with an explanation that shows on hover and on keyboard focus
+ * (screen readers read it via aria-describedby).
+ */
+export function InfoTip({ text, label = "More information" }: { text: string; label?: string }) {
+  const id = useId();
+  // Fixed to the viewport so scrolling tables/panels cannot clip it; flips above near the bottom.
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const show = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    const width = Math.min(288, window.innerWidth * 0.8);
+    const left = Math.max(
+      8,
+      Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8),
+    );
+    setPos(
+      r.bottom + 160 > window.innerHeight
+        ? { left, bottom: window.innerHeight - r.top + 6 }
+        : { left, top: r.bottom + 6 },
+    );
+  };
+  const hide = () => setPos(null);
+  return (
+    <span className="inline-flex align-middle">
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        onMouseEnter={(e) => show(e.currentTarget)}
+        onMouseLeave={hide}
+        onFocus={(e) => show(e.currentTarget)}
+        onBlur={hide}
+        onClick={(e) => (pos ? hide() : show(e.currentTarget))}
+        onKeyDown={(e) => e.key === "Escape" && hide()}
+        className="rounded-full text-faint hover:text-legend focus-visible:text-legend focus-visible:outline focus-visible:outline-2 focus-visible:outline-signal"
+      >
+        <Info className="size-3.5" />
+      </button>
+      <span
+        id={id}
+        role="tooltip"
+        style={pos ?? undefined}
+        className={cx(
+          "pointer-events-none fixed z-[100] w-72 max-w-[80vw] rounded-md border border-line-strong bg-panel-2 px-3 py-2 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-legend shadow-lg",
+          pos ? "block" : "hidden",
+        )}
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
 export function Field({
   label,
   hint,
+  info,
   children,
   className,
 }: {
   label: string;
   hint?: ReactNode;
+  /** Explanation shown in an ⓘ tooltip next to the label. */
+  info?: string;
   children: (id: string) => ReactNode;
   className?: string;
 }) {
   const id = useId();
   return (
     <div className={cx("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm text-muted">
-        {label}
-      </label>
+      <span className="inline-flex items-center gap-1.5">
+        <label htmlFor={id} className="text-sm text-muted">
+          {label}
+        </label>
+        {info ? <InfoTip text={info} label={`About ${label}`} /> : null}
+      </span>
       {children(id)}
       {hint ? <p className="text-xs text-faint">{hint}</p> : null}
     </div>
@@ -148,12 +210,23 @@ export function Toggle({
   onChange,
   label,
   disabled,
+  info,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   disabled?: boolean;
+  /** Explanation shown in an ⓘ tooltip after the label. */
+  info?: string;
 }) {
+  // The tooltip button sits beside the switch: a button may not contain another button.
+  if (info)
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Toggle checked={checked} onChange={onChange} label={label} disabled={disabled} />
+        <InfoTip text={info} label={`About ${label}`} />
+      </span>
+    );
   return (
     <button
       type="button"

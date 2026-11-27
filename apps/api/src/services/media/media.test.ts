@@ -1,11 +1,13 @@
-import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestEnv, makeTone, type TestEnv } from "../../test-utils.js";
-import { analyzeMedia, analyzePending, gainFor } from "./loudness.js";
+import { analyzeMedia, analyzePending, gainFor, recomputeAutocue } from "./loudness.js";
 import { applySuggestion, parseRecordings, suggestForMedia } from "./metadata-lookup.js";
+import { NewsRefresher } from "./news-refresh.js";
 import { parseFilename } from "./probe.js";
-import { importFile, isIgnoredName, scanLibrary } from "./scanner.js";
+import { importFile, isIgnoredName, scanLibrary, type MediaRoot } from "./scanner.js";
 import { MediaWatcher } from "./watcher.js";
 
 let env: TestEnv;
@@ -100,6 +102,23 @@ describe("media scanner (M2.1–M2.3)", () => {
     expect(near.items.map((i) => i.relative_path)).toContain("Other/Tagged again.mp3");
   });
 
+  it("does not mark tracks missing when a share is unmounted (folder looks empty)", async () => {
+    const share = join(root, "..", "share-mount");
+    const file = makeTone(join(share, "Sharer - Song.mp3"), { seconds: 1 });
+    const roots: MediaRoot[] = [{ id: "share", path: share }];
+    const row = () => env.repos.media.search({ artist: "Sharer" }).items[0];
+    await scanLibrary(env.repos, env.config, { roots });
+    expect(row()?.status).toBe("ok");
+    rmSync(file); // the share "drops out": the mount point is still there but empty
+    const report = await scanLibrary(env.repos, env.config, { roots });
+    expect(report.missing).toBe(0);
+    expect(report.errors.join()).toMatch(/is the share mounted/);
+    expect(row()?.status).toBe("ok");
+    // Clean up so the later rescan counts stay as before.
+    env.repos.media.delete(row()!.id);
+    rmSync(share, { recursive: true, force: true });
+  });
+
   it("skips unchanged files on rescan and marks deleted files missing", async () => {
     rmSync(join(root, "Other", "Tagged again.mp3"));
     const report = await scanLibrary(env.repos, env.config);
@@ -129,6 +148,180 @@ describe("media scanner (M2.1–M2.3)", () => {
 });
 
 describe("loudness (M2.4)", () => {
+  /** Tone with leading silence and an optional linear fade-out (for autocue tests). */
+  function makeFadeTone(
+    path: string,
+    opts: { lead: number; body: number; fade: number; tail: number },
+  ) {
+    const { lead, body, fade, tail } = opts;
+    const end = lead + body;
+    const fadeStart = end - fade;
+    const shape = fade > 0 ? `if(lt(t\\,${fadeStart})\\,1\\,max(0\\,(${end}-t)/${fade}))` : "1";
+    const expr = `if(between(t\\,${lead}\\,${end})\\,0.1*sin(2*PI*440*t)*${shape}\\,0)`;
+    mkdirSync(dirname(path), { recursive: true });
+    execFileSync("ffmpeg", [
+      "-v",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      `aevalsrc=${expr}|${expr}:s=48000:d=${end + tail}`,
+      "-c:a",
+      "pcm_s16le",
+      path,
+    ]);
+    return path;
+  }
+
+  it("detects cue points and the crossfade from volume (autocue)", async () => {
+    const path = makeFadeTone(join(root, "General", "Autocue - Fade.wav"), {
+      lead: 1.5,
+      body: 8,
+      fade: 3,
+      tail: 1.5,
+    });
+    const { row } = await importFile(env.repos, env.config, path);
+    const m = row!;
+    const r = await analyzeMedia(env.repos, m.id, -16);
+    expect(r.autocue).not.toBeNull();
+    const got = env.repos.media.get(m.id)!;
+    expect(got.cue_source).toBe("auto");
+    expect(got.loudness_envelope).toBeTruthy();
+    // Leading silence is trimmed (1.5 s minus the 0.1 + 0.2 s safety margin).
+    expect(got.cue_in!).toBeGreaterThan(1.1);
+    expect(got.cue_in!).toBeLessThan(1.6);
+    expect(got.fade_in).toBeCloseTo(0.2, 1);
+    // A 3 s fade to silence: cue-out near its end, crossfade where it passes −7 dB.
+    expect(got.cue_out!).toBeGreaterThan(9.2);
+    expect(got.cue_out!).toBeLessThan(10.05);
+    expect(got.fade_out!).toBeGreaterThan(0.8);
+    expect(got.fade_out!).toBeLessThan(2.2);
+    const cross = got.cue_out! - got.fade_out!;
+    expect(cross).toBeGreaterThan(7.8);
+    expect(cross).toBeLessThan(9.2);
+    expect(JSON.parse(got.autocue_json!)).toMatchObject({ sustained: expect.any(Boolean) });
+  }, 30_000);
+
+  it("re-analyses a replaced news file once it is completely written", async () => {
+    const rel = "Nieuws/test-news.wav";
+    const path = join(root, rel);
+    const refresher = new NewsRefresher(
+      env.repos,
+      env.config,
+      () => [rel],
+      () => -16,
+    );
+    makeTone(path, { seconds: 2, format: "wav" });
+    expect(await refresher.check()).toBe(0); // first look: wait for the file to settle
+    expect(await refresher.check()).toBe(1);
+    const first = env.repos.media.getByPath(path)!;
+    expect(first.loudness_envelope).toBeTruthy();
+    expect(first.cue_out!).toBeLessThanOrEqual(2.05);
+    expect(await refresher.check()).toBe(0); // unchanged: nothing to do
+    // The next bulletin arrives under the same name, twice as long.
+    makeTone(path, { seconds: 4, format: "wav" });
+    expect(await refresher.check()).toBe(0);
+    expect(await refresher.check()).toBe(1);
+    const second = env.repos.media.getByPath(path)!;
+    expect(second.id).toBe(first.id);
+    expect(second.duration!).toBeGreaterThan(3.9);
+    expect(second.cue_out!).toBeGreaterThan(3.8);
+    env.repos.media.delete(second.id);
+    rmSync(path);
+  }, 30_000);
+
+  /** Config with one enabled NAS path (the SMB share) next to media.root. */
+  const withNas = () => {
+    const mount = join(env.dir, "nas-mount");
+    const config = {
+      ...env.config,
+      media: {
+        ...env.config.media,
+        nasPaths: [
+          { id: "off", mountPath: join(env.dir, "nas-off"), relativePath: "/", enabled: false },
+          { id: "share", mountPath: mount, relativePath: "/radio-music", enabled: true },
+        ],
+      },
+    };
+    return { config, nasRoot: join(mount, "radio-music") };
+  };
+
+  it("picks up a news file that only exists on a NAS path, ignoring the .tmp beside it", async () => {
+    const { config, nasRoot } = withNas();
+    const rel = "Nieuws/nas-news.wav";
+    const path = join(nasRoot, rel);
+    const tmp = join(nasRoot, "Nieuws", ".nas-news.wav.tmp");
+    const logs: string[] = [];
+    const refresher = new NewsRefresher(
+      env.repos,
+      config,
+      () => [rel],
+      () => -16,
+      (m) => logs.push(m),
+    );
+    expect(await refresher.check()).toBe(0); // not there yet: nothing happens
+    makeTone(path, { seconds: 2, format: "wav" });
+    expect(await refresher.check()).toBe(0);
+    expect(await refresher.check()).toBe(1);
+    const first = env.repos.media.getByPath(path)!;
+    expect(first.relative_path).toBe(rel);
+    expect(first.duration!).toBeLessThan(2.1);
+
+    // The generator writes ".nas-news.wav.tmp" first, then renames it over the bulletin.
+    const staging = makeTone(join(env.dir, "staging", "next.wav"), { seconds: 4, format: "wav" });
+    copyFileSync(staging, tmp);
+    expect(await refresher.check()).toBe(0);
+    expect(await refresher.check()).toBe(0); // the .tmp is not the bulletin
+    expect(env.repos.media.getByPath(tmp)).toBeUndefined();
+    renameSync(tmp, path);
+    expect(await refresher.check()).toBe(0); // first look at the new version
+    expect(await refresher.check()).toBe(1); // second tick: re-imported, no full scan
+    const second = env.repos.media.getByPath(path)!;
+    expect(second.id).toBe(first.id);
+    expect(second.duration!).toBeGreaterThan(3.9);
+    expect(second.loudness_envelope).toBeTruthy();
+    expect(logs.some((l) => l.includes("warning"))).toBe(false);
+    env.repos.media.delete(second.id);
+    rmSync(path);
+  }, 30_000);
+
+  it("prefers media.root when a news file exists there and on a NAS path, warning once", async () => {
+    const { config, nasRoot } = withNas();
+    const rel = "Nieuws/both-news.wav";
+    const local = makeTone(join(root, rel), { seconds: 2, format: "wav" });
+    const nas = makeTone(join(nasRoot, rel), { seconds: 3, format: "wav" });
+    const logs: string[] = [];
+    const refresher = new NewsRefresher(
+      env.repos,
+      config,
+      () => [rel],
+      () => -16,
+      (m) => logs.push(m),
+    );
+    expect(await refresher.check()).toBe(0);
+    expect(await refresher.check()).toBe(1);
+    expect(await refresher.check()).toBe(0);
+    expect(env.repos.media.getByPath(local)).toBeTruthy();
+    expect(env.repos.media.getByPath(nas)).toBeUndefined();
+    expect(logs.filter((l) => l.includes("warning") && l.includes(rel))).toHaveLength(1);
+    env.repos.media.delete(env.repos.media.getByPath(local)!.id);
+    rmSync(local);
+    rmSync(nas);
+  }, 30_000);
+
+  it("respects manual cue points until they are adopted again", async () => {
+    const m = env.repos.media.findByRelativePath("General/Autocue - Fade.wav")!;
+    env.repos.media.update(m.id, { cue_in: 5, cue_source: "manual" });
+    recomputeAutocue(env.repos, m.id);
+    expect(env.repos.media.get(m.id)!.cue_in).toBe(5);
+    expect(env.repos.media.get(m.id)!.cue_source).toBe("manual");
+    recomputeAutocue(env.repos, m.id, {}, true);
+    const adopted = env.repos.media.get(m.id)!;
+    expect(adopted.cue_source).toBe("auto");
+    expect(adopted.cue_in!).toBeGreaterThan(1.1);
+  });
+
   it("measures a known tone within ±0.5 LU and stores the playback gain", async () => {
     const m = env.repos.media.findByRelativePath("General/Band B - Song B.mp3")!;
     const r = await analyzeMedia(env.repos, m.id, -16);

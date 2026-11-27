@@ -24,7 +24,7 @@
  * - `bypass`    — Stereo Tool disabled in config: input → output untouched.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BYTES_PER_FRAME, CHANNELS, SAMPLE_RATE } from "@radio/core";
 import { secret, type RuntimeConfig, type StereoToolStatus, type WorkerAlert } from "@radio/shared";
@@ -55,6 +55,17 @@ export interface StereoToolOptions {
   hostScript?: string;
   /** Plugin mode: Stereo Tool's home directory for its own settings files. */
   homeDir?: string;
+  /** Licence key file; when present it wins over `licenseKeyEnv`. */
+  keyFile?: string;
+}
+
+/** Licence key: the key file (installer/console) first, then the env var. */
+export function readLicenseKey(envName: string, keyFile?: string): string {
+  if (keyFile && existsSync(keyFile)) {
+    const k = readFileSync(keyFile, "utf8").trim();
+    if (k) return k;
+  }
+  return secret(envName) ?? "";
 }
 
 /** What the plugin host reported (`@stereotool {json}` lines on stderr). */
@@ -420,7 +431,7 @@ export function createStereoTool(
   if (!config.enabled) return new PassthroughStereoTool(false);
   if (opts.mock)
     return new ProcessStereoTool(config, opts, "mock", process.execPath, [opts.mockScript]);
-  const licenseKey = secret(config.licenseKeyEnv) ?? "";
+  const licenseKey = readLicenseKey(config.licenseKeyEnv, opts.keyFile);
   if (config.inputMode === "plugin") {
     const hostConfig = {
       library: config.library,
@@ -438,7 +449,12 @@ export function createStereoTool(
       process.execPath,
       [opts.hostScript ?? DEFAULT_HOST_SCRIPT],
       [licenseKey],
-      { ...process.env, STEREOTOOL_HOST: JSON.stringify(hostConfig) },
+      {
+        ...process.env,
+        // The host reads the key from this env var (never from the command line).
+        [config.licenseKeyEnv]: licenseKey,
+        STEREOTOOL_HOST: JSON.stringify(hostConfig),
+      },
     );
   }
   const args = expandArgs(config.args, {

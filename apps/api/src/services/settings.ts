@@ -38,6 +38,48 @@ export const SETTING_DEFINITIONS = {
     worker: false,
     label: "Loudness target (LUFS)",
   },
+  "audio.autocue.enabled": {
+    schema: z.boolean(),
+    category: "audio",
+    worker: false,
+    label: "Detect cue points and fades (autocue)",
+    default: true,
+  },
+  "audio.autocue.cueInThreshold": {
+    schema: z.number().gte(-80).lte(0),
+    category: "audio",
+    worker: false,
+    label: "Cue-in threshold (dB below loudness)",
+    default: -34,
+  },
+  "audio.autocue.cueOutThreshold": {
+    schema: z.number().gte(-80).lte(0),
+    category: "audio",
+    worker: false,
+    label: "Cue-out threshold (dB below loudness)",
+    default: -42,
+  },
+  "audio.autocue.crossThreshold": {
+    schema: z.number().gte(-40).lte(0),
+    category: "audio",
+    worker: false,
+    label: "Crossfade trigger (dB below loudness)",
+    default: -7,
+  },
+  "audio.autocue.maxOverlap": {
+    schema: z.number().gte(0).lte(30),
+    category: "audio",
+    worker: true,
+    label: "Maximum crossfade (s)",
+    default: 6,
+  },
+  "audio.autocue.sustainedEndings": {
+    schema: z.boolean(),
+    category: "audio",
+    worker: false,
+    label: "Keep long sustained endings",
+    default: true,
+  },
   "live.duckDb": {
     schema: z.number().gte(-40).lte(0),
     category: "live",
@@ -150,6 +192,64 @@ export const SETTING_DEFINITIONS = {
 
 export type SettingKey = keyof typeof SETTING_DEFINITIONS;
 
+/** Plain-language explanation per setting (the ⓘ tooltip in Settings). Every key must have one. */
+export const SETTING_HELP: Record<SettingKey, string> = {
+  "audio.masterGain":
+    "Overall volume of everything that goes on air, before Stereo Tool. 1 = unchanged, 0.5 ≈ −6 dB, 1.5 ≈ +3.5 dB. A safety limiter at −1 dBFS stops clipping.",
+  "audio.boundaryToleranceSeconds":
+    "How flexible the news on the hour (and half hour) is. A song that ends at most this many seconds after the hour may finish and the news starts a little late; one that runs longer is faded out at the hour. A song that ends shortly before the hour starts the news a little early, and no new song is started with less than this time left.",
+  "audio.silenceThresholdDb":
+    "Anything quieter than this counts as silence (dead air). −60 dBFS is near-silent; raise it (e.g. −50) if hiss or very quiet passages should also count.",
+  "audio.silenceSeconds":
+    "How long the station may be silent before the emergency loop takes over automatically. In manual (studio) mode a gap of at least 60 seconds hands the station back to automation instead.",
+  "audio.targetLufs":
+    "Every track is played at this loudness so songs sound equally loud (like AzuraCast's lufs_target). −16 is relaxed, −12 is louder. Changing it applies to the whole library at once; the original files are never modified.",
+  "audio.autocue.enabled":
+    "Measure every track and set its start, end and crossfade automatically from the volume, like AzuraCast/Liquidsoap autocue. Tracks whose cue points you set by hand are left alone.",
+  "audio.autocue.cueInThreshold":
+    "Where a track starts: the first moment it gets louder than this many dB below its own average loudness. Lower (e.g. −40) keeps quiet intros; higher skips more of a soft start. Liquidsoap: cue_in_threshold.",
+  "audio.autocue.cueOutThreshold":
+    "Where a track ends: the last moment it is louder than this many dB below its average loudness. Lower (−42) plays fades out to near silence; higher (−30) cuts the quiet tail off sooner. Liquidsoap: cue_out_threshold.",
+  "audio.autocue.crossThreshold":
+    "When the next song starts: the moment the outro has dropped this many dB below the track's average. −7 starts early (long, overlapping crossfades); −15 waits until the outro is quieter (shorter, tighter crossfades). Liquidsoap: cross_threshold.",
+  "audio.autocue.maxOverlap":
+    "The longest two songs may play over each other. A track with a longer fade-out is ended earlier instead. 0 turns crossfading off. Applied to playout immediately.",
+  "audio.autocue.sustainedEndings":
+    "Songs that end on a long held note or a slow fade are detected and allowed to ring out further before the next song starts, instead of being cut at the normal crossfade point. Liquidsoap: sustained_endings_enabled.",
+  "live.duckDb":
+    "How much quieter the music gets while you talk in duck mode (and under voice-overs). −12 dB is clearly in the background; −20 dB is almost gone.",
+  "live.duckAttackMs":
+    "How fast the music goes down when you start talking. Short (50 ms) ducks almost instantly.",
+  "live.duckReleaseMs":
+    "How fast the music comes back up after you stop talking. Longer (500–1000 ms) sounds smoother and avoids pumping between words.",
+  "live.noShowGraceSeconds":
+    "During a scheduled live hour: if no DJ is connected this many seconds after the hour starts, an alert is raised. Fallback music keeps playing either way.",
+  "requests.enabled": "Lets listeners request songs on the public listener page.",
+  "requests.autoApprove":
+    "Requests go straight into the queue. Off: they wait in Requests until someone approves them.",
+  "requests.cooldownMinutes":
+    "After a request, the same listener (IP address) has to wait this many minutes before the next one. 0 = no waiting.",
+  "requests.maxPerHour":
+    "Most requests one listener (IP address) can make per hour, on top of the cooldown.",
+  "requests.profanityFilter": "Rejects requests and dedications containing swear words.",
+  "requests.dedications":
+    'Listeners may add a name and short message ("for Anna, happy birthday") to a request.',
+  "retention.historyDays":
+    "How long the play history (what was played when), listener statistics and the news-timing log are kept for reports. Older entries are deleted by the nightly clean-up.",
+  "retention.logsDays":
+    "How long ended login sessions, revoked app connections and old password-reset links are kept before the nightly clean-up deletes them. The audit log is kept.",
+  "retention.requestsDays":
+    "How long handled listener requests are kept before they are deleted. Requests still waiting for approval are never removed.",
+  "retention.recordingsDays":
+    "How long recordings of live shows are kept before the files are deleted.",
+  "backups.dailyKeep": "Number of daily database backups to keep; older ones are deleted.",
+  "backups.weeklyKeep": "Number of weekly database backups to keep, on top of the daily ones.",
+  "alerts.emailTo":
+    "Who gets an e-mail for important alerts (dead air, emergency, encoder or Stereo Tool trouble). One address per line; needs SMTP in secrets.env.",
+  "alerts.dedupeSeconds":
+    "The same alert is not repeated within this many seconds, so a flapping problem doesn't flood your inbox. A worse severity is always sent.",
+};
+
 export class SettingsService {
   constructor(
     private readonly repos: Repositories,
@@ -161,9 +261,14 @@ export class SettingsService {
   }
 
   /** All typed settings grouped by category, with labels for the UI. */
-  list(
-    category?: string,
-  ): { key: string; value: unknown; category: string; label: string; reloadsWorker: boolean }[] {
+  list(category?: string): {
+    key: string;
+    value: unknown;
+    category: string;
+    label: string;
+    help: string;
+    reloadsWorker: boolean;
+  }[] {
     return (
       Object.entries(SETTING_DEFINITIONS) as [
         SettingKey,
@@ -173,9 +278,10 @@ export class SettingsService {
       .filter(([, d]) => !category || d.category === category)
       .map(([key, d]) => ({
         key,
-        value: this.repos.settings.get(key, null),
+        value: this.repos.settings.get(key, "default" in d ? d.default : null),
         category: d.category,
         label: d.label,
+        help: SETTING_HELP[key],
         reloadsWorker: d.worker,
       }));
   }
@@ -220,6 +326,13 @@ export class SettingsService {
           ip: actor.ip,
         });
         changed.push(key);
+        // A new loudness target applies to the whole library at once (same clamp as gainFor).
+        if (key === "audio.targetLufs")
+          this.repos.db
+            .prepare(
+              "UPDATE media SET gain_db = ROUND(MAX(-24, MIN(12, ? - loudness_lufs)), 2) WHERE loudness_lufs IS NOT NULL",
+            )
+            .run(value);
       }
     })();
     let workerReloaded = false;

@@ -10,19 +10,30 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { decideBoundary, nextHourBoundaryMs, stationNow, type BoundaryDecision } from "@radio/core";
+import {
+  crossfadeShape,
+  decideBoundary,
+  decodeEnvelope,
+  envelopeLevel,
+  nextHourBoundaryMs,
+  stationNow,
+  type BoundaryDecision,
+  type CrossfadeShape,
+} from "@radio/core";
 import type {
   BoundaryLogEntry,
   LiveStatus,
   PlayoutMode,
   PlayoutState,
   QueueItem,
+  StudioPlayerId,
   WorkerAlert,
   WorkerEventType,
 } from "@radio/shared";
 import { Deck } from "./audio/deck.js";
 import type { Mixer } from "./audio/mixer.js";
-import type { PlanSource } from "./scheduler/plan-source.js";
+import { mediaToItem, type PlanSource } from "./scheduler/plan-source.js";
+import { Studio } from "./studio.js";
 
 export interface EngineOptions {
   source: PlanSource;
@@ -38,6 +49,8 @@ export interface EngineOptions {
   alert?: (a: WorkerAlert) => void;
   /** Run the 100 ms scheduler tick on a timer (tests drive `tick()` manually). */
   autoTick?: boolean;
+  /** Longest overlap between two automation tracks (from the autocue setting). */
+  maxCrossfadeSeconds?: number;
   /** Extra status providers (encoders, Stereo Tool) merged into the state. */
   status?: () => Pick<PlayoutState, "encoders" | "stereotool">;
 }
@@ -50,6 +63,15 @@ interface Playing {
 
 const PRELOAD_SECONDS = 8;
 const HISTORY_SIZE = 25;
+/** Songs crossfade into each other (planned music and listener requests). */
+const isSong = (i: QueueItem) => i.kind === "music" || i.kind === "request";
+/** A song may also start under the fading tail of the news or a jingle (never the reverse). */
+const canHandOver = (i: QueueItem) => isSong(i) || i.kind === "news" || i.kind === "jingle";
+/** Automation fade when the studio takes over, and player fade on hand-back. */
+const MANUAL_FADE_MS = 1000;
+const HANDBACK_FADE_SECONDS = 2;
+/** Silence this long in manual mode hands the station back to automation. */
+const MANUAL_DEAD_AIR_SECONDS = 60;
 
 export class PlayoutEngine extends EventEmitter {
   private readonly source: PlanSource;
@@ -60,6 +82,8 @@ export class PlayoutEngine extends EventEmitter {
   toleranceSeconds: number;
   silenceThresholdDb: number;
   silenceSeconds: number;
+  /** Longest crossfade between automation tracks (seconds). */
+  maxCrossfadeSeconds: number;
   private readonly startedAt = Date.now();
 
   mode: PlayoutMode = "idle";
@@ -71,6 +95,8 @@ export class PlayoutEngine extends EventEmitter {
   current: Playing | null = null;
   private preloaded: { item: QueueItem; deck: Deck } | null = null;
   private fading = new Set<Deck>();
+  /** Outgoing crossfade decks still playing their tail. */
+  private tails = new Set<Deck>();
   private voiceOver: Playing | null = null;
   private eventState: {
     id: number;
@@ -111,6 +137,12 @@ export class PlayoutEngine extends EventEmitter {
   };
   private lastRecoverAttempt = 0;
   private readonly autoRecoverSeconds: number;
+  /** Manual studio players (A/B) and cart pads. */
+  readonly studio: Studio;
+  /** Manual mode: automation is held while the studio players run the station. */
+  manual = false;
+  /** Automation track that was on air when manual mode started (resumed on hand-back). */
+  private manualSaved: { item: QueueItem; position: number; boundaryAt: number } | null = null;
 
   constructor(private readonly opts: EngineOptions) {
     super();
@@ -122,7 +154,14 @@ export class PlayoutEngine extends EventEmitter {
     this.toleranceSeconds = opts.toleranceSeconds;
     this.silenceThresholdDb = opts.silenceThresholdDb;
     this.silenceSeconds = opts.silenceSeconds;
+    this.maxCrossfadeSeconds = opts.maxCrossfadeSeconds ?? 6;
     this.autoRecoverSeconds = opts.autoRecoverSeconds ?? 60;
+    this.studio = new Studio(this.mixer, {
+      log: this.log,
+      alert: (a) => this.alert(a),
+      changed: () => this.send("state", this.getState()),
+      started: () => this.enterManual(),
+    });
   }
 
   private send(type: WorkerEventType, payload: unknown): void {
@@ -149,8 +188,10 @@ export class PlayoutEngine extends EventEmitter {
       this.voiceOver?.deck,
       this.emergency.deck,
       ...this.fading,
+      ...this.tails,
     ])
       d?.stop();
+    this.studio.shutdown();
   }
 
   validateEmergency(): boolean {
@@ -193,11 +234,10 @@ export class PlayoutEngine extends EventEmitter {
       if (!plan) {
         if (i === 0 && this.queue.filter((q) => q.source === "automation").length < 2) {
           // No plan for the on-air hour: keep the station on air with random library music.
-          const fill = this.source.fallbackMusic(15, this.excludeIds());
-          if (fill.length) {
-            this.queue.push(...fill);
-            this.loadedHours.add(key);
-          }
+          // Topped up a few at a time (never marked loaded), so the next song is always queued
+          // and preloaded (no gap), and a plan generated later in the hour still gets picked up.
+          const fill = this.source.fallbackMusic(3, this.excludeIds());
+          if (fill.length) this.queue.push(...fill);
           if (!this.missingPlanAlerted.has(key)) {
             this.missingPlanAlerted.add(key);
             this.alert({
@@ -283,6 +323,7 @@ export class PlayoutEngine extends EventEmitter {
     this.ensureQueue();
     this.checkAutoRecover();
     if (this.emergency.active || this.paused) return;
+    if (this.manual) return;
     if (this.live.active && this.live.mode === "takeover") return;
     const now = this.now();
 
@@ -294,6 +335,7 @@ export class PlayoutEngine extends EventEmitter {
       this.current.deck.remaining < PRELOAD_SECONDS
     ) {
       this.preloaded?.deck.stop();
+      this.queue[0] = this.freshen(this.queue[0]);
       const deck = this.makeDeck(this.queue[0]);
       deck.load(0);
       this.preloaded = { item: this.queue[0], deck };
@@ -315,7 +357,76 @@ export class PlayoutEngine extends EventEmitter {
       next: this.queue[0] ? { locked: this.queue[0].locked, kind: this.queue[0].kind } : null,
       override: this.live.active || this.eventState !== null,
     });
+    if (this.crossfadeIfDue(decision, locked)) return;
     this.apply(decision, locked);
+  }
+
+  /* ── Crossfades ───────────────────────────────────────────────────── */
+
+  /**
+   * Starts the next track when the current one reaches its detected crossfade
+   * point (the moment the outro drops `crossThreshold` below the track's
+   * loudness). Both decks then play together: the next starts at full level,
+   * and how fast this one fades depends on how loud the next intro is
+   * (`crossfadeShape`). Songs that end abruptly have no fade region: the next
+   * one starts the moment they end. A song can follow a song, the news or a
+   * jingle this way; news and jingles themselves still start on their own.
+   */
+  private crossfadeIfDue(decision: BoundaryDecision, locked: QueueItem | null): boolean {
+    if (decision.action !== "continue") return false;
+    const cur = this.current;
+    const next = this.queue[0];
+    if (!cur || !next) return false;
+    if (cur.deck.state !== "playing" || !canHandOver(cur.item) || !isSong(next)) return false;
+    if (next.locked) return false;
+    const cross = Math.min(cur.item.fadeOut, this.maxCrossfadeSeconds);
+    if (cross < 0.3) return false;
+    const remaining = cur.deck.remaining;
+    if (!(remaining > 0) || remaining > cross) return false;
+    // Rule 4: no new song when the news is due within the tolerance after this one ends.
+    if (
+      locked?.plannedStart &&
+      locked.plannedStart - (this.now() + remaining * 1000) < this.toleranceSeconds * 1000
+    )
+      return false;
+    const shape = this.crossfadeShapeFor(cur, next, Math.min(cross, remaining));
+    this.queue.shift();
+    this.startItem(next, 0, undefined, { crossfade: true, shape });
+    return true;
+  }
+
+  /**
+   * Compares the loudness of the old track's tail with the next track's first 2 s,
+   * from the stored loudness envelopes. Null (keep the plain autocue fade) without them.
+   */
+  private crossfadeShapeFor(cur: Playing, next: QueueItem, overlap: number): CrossfadeShape | null {
+    try {
+      const a = cur.item.mediaId !== null ? this.source.media(cur.item.mediaId) : undefined;
+      const b = next.mediaId !== null ? this.source.media(next.mediaId) : undefined;
+      if (!a?.loudness_envelope || !b?.loudness_envelope) return null;
+      if (a.loudness_lufs === null || b.loudness_lufs === null) return null;
+      const crossAt = cur.item.cueIn + cur.deck.duration - overlap;
+      const tail = envelopeLevel(
+        decodeEnvelope(a.loudness_envelope),
+        a.loudness_lufs,
+        crossAt,
+        crossAt + Math.min(overlap, 2),
+      );
+      const intro = envelopeLevel(
+        decodeEnvelope(b.loudness_envelope),
+        b.loudness_lufs,
+        next.cueIn,
+        next.cueIn + 2,
+      );
+      const shape = crossfadeShape(overlap, tail, intro);
+      if (shape)
+        this.log(
+          `crossfade "${cur.item.title}" → "${next.title}": ${overlap.toFixed(1)} s overlap, tail ${tail} LU, intro ${intro} LU → old holds ${shape.hold.toFixed(1)} s, fades ${shape.fade.toFixed(1)} s`,
+        );
+      return shape;
+    } catch {
+      return null;
+    }
   }
 
   private apply(decision: BoundaryDecision, locked: QueueItem | null): void {
@@ -446,12 +557,95 @@ export class PlayoutEngine extends EventEmitter {
     });
   }
 
+  /**
+   * Crossfade hand-over: the outgoing deck keeps playing while the next track
+   * starts. With a `shape` it holds its level, then fades out as planned;
+   * without one it plays its built-in fade-out (the last `fadeOut` seconds
+   * before cue-out). It is logged and removed once silent or at its end.
+   */
+  private retireAfterFade(old: Playing, shape: CrossfadeShape | null = null): void {
+    this.tails.add(old.deck);
+    let done = false;
+    const retire = () => {
+      if (done) return;
+      done = true;
+      this.tails.delete(old.deck);
+      this.mixer.decks.automation.delete(old.deck);
+      this.mixer.decks.event.delete(old.deck);
+      this.history.unshift(old.item);
+      this.history = this.history.slice(0, HISTORY_SIZE);
+      this.send("track_ended", {
+        item: old.item,
+        endedAt: new Date(this.now()).toISOString(),
+        reason: "ended",
+        playedSeconds: old.deck.position,
+      });
+    };
+    old.deck.once("ended", retire);
+    old.deck.once("error", retire);
+    if (shape) {
+      old.deck.setFades({ fadeOut: 0 });
+      old.deck.fadeTo(0, shape.fade * 1000, shape.hold * 1000);
+      old.deck.once("faded", () => {
+        retire();
+        old.deck.stop();
+      });
+    }
+  }
+
+  /** Silences crossfade tails immediately (stop, pause, emergency, studio takeover). */
+  private killTails(): void {
+    for (const deck of this.tails) {
+      this.mixer.decks.automation.delete(deck);
+      this.mixer.decks.event.delete(deck);
+      deck.stop();
+    }
+    this.tails.clear();
+  }
+
+  /**
+   * News bulletins are replaced under the same file name all day: just before one goes on
+   * air, take its current length and cue points from the library instead of the values
+   * from when the hour was planned. Other items are returned unchanged.
+   */
+  private freshen(item: QueueItem): QueueItem {
+    if (item.mediaId === null || item.kind !== "news") return item;
+    const m = this.source.media(item.mediaId);
+    if (!m || m.status !== "ok" || !m.duration) return item;
+    const f = mediaToItem(m);
+    return {
+      ...item,
+      path: f.path,
+      duration: f.duration,
+      cueIn: f.cueIn,
+      cueOut: f.cueOut,
+      fadeIn: f.fadeIn,
+      fadeOut: f.fadeOut,
+      gainDb: f.gainDb,
+      intro: f.intro,
+      outro: f.outro,
+    };
+  }
+
   startItem(
     item: QueueItem,
     offset = 0,
     bus: "automation" | "event" = this.eventState ? "event" : "automation",
+    opts: { crossfade?: boolean; shape?: CrossfadeShape | null } = {},
   ): void {
-    if (this.current) this.finishCurrent("replaced");
+    if (this.current && !opts.crossfade) this.finishCurrent("replaced");
+    if (opts.crossfade && this.current) this.retireAfterFade(this.current, opts.shape ?? null);
+    item = this.freshen(item);
+    // A preloaded deck with outdated cue points (file replaced in the last seconds) is discarded.
+    if (
+      this.preloaded?.item.uid === item.uid &&
+      (this.preloaded.item.cueIn !== item.cueIn ||
+        this.preloaded.item.duration !== item.duration ||
+        this.preloaded.item.path !== item.path)
+    ) {
+      this.preloaded.deck.stop();
+      this.preloaded = null;
+    }
     let deck: Deck;
     if (this.preloaded?.item.uid === item.uid && offset === 0) {
       deck = this.preloaded.deck;
@@ -460,6 +654,8 @@ export class PlayoutEngine extends EventEmitter {
       deck = this.makeDeck(item);
       deck.load(offset);
     }
+    // In a crossfade the next song comes in at full level (its cue-in sits just before the music).
+    if (opts.crossfade) deck.setFades({ fadeIn: 0 });
     deck.play();
     this.mixer.decks[bus].add(deck);
     const playing: Playing = { item, deck, startedAt: this.now() - offset * 1000 };
@@ -506,6 +702,8 @@ export class PlayoutEngine extends EventEmitter {
   private finishCurrent(reason: "ended" | "skipped" | "cut" | "replaced" | "stopped"): void {
     const cur = this.current;
     if (!cur) return;
+    // A hard transition ends any crossfade tail; a natural end lets it finish fading.
+    if (reason !== "ended") this.killTails();
     this.current = null;
     if (reason !== "cut") {
       this.mixer.decks.automation.delete(cur.deck);
@@ -534,6 +732,19 @@ export class PlayoutEngine extends EventEmitter {
     }
     const now = this.now();
     this.silentSince ??= now - frames / 48;
+    if (this.manual) {
+      // The operator may leave short gaps; a long one means nobody is driving: automation takes over.
+      if (now - this.silentSince < Math.max(this.silenceSeconds, MANUAL_DEAD_AIR_SECONDS) * 1000)
+        return;
+      this.silentSince = null;
+      this.alert({
+        type: "manual_dead_air",
+        severity: "error",
+        message: `Silence for ${MANUAL_DEAD_AIR_SECONDS} s in manual mode — automation took over`,
+      });
+      this.exitManual();
+      return;
+    }
     if (now - this.silentSince >= this.silenceSeconds * 1000) {
       this.silentSince = null;
       this.triggerEmergency("silence");
@@ -543,10 +754,12 @@ export class PlayoutEngine extends EventEmitter {
   triggerEmergency(reason: string): void {
     if (this.emergency.active) return;
     this.log(`EMERGENCY: ${reason}`);
+    this.killTails();
     this.emergency = { active: true, reason, since: this.now(), deck: null };
     this.mode = "emergency";
     this.mixer.busMute.automation = true;
     this.mixer.busMute.event = true;
+    this.mixer.busMute.studio = true;
     const fromPlaylist = this.source.emergencyItems()[0];
     const path = existsSync(this.opts.emergencyFile)
       ? this.opts.emergencyFile
@@ -582,6 +795,7 @@ export class PlayoutEngine extends EventEmitter {
     this.emergency = { active: false, reason: null, since: null, deck: null };
     this.mixer.busMute.automation = false;
     this.mixer.busMute.event = false;
+    this.mixer.busMute.studio = false;
     this.mode = this.live.active ? "live" : this.eventState ? "event" : "autoplay";
     this.silentSince = null;
     // The silent deck is likely broken: drop it and continue from the plan.
@@ -619,6 +833,7 @@ export class PlayoutEngine extends EventEmitter {
   pause(): void {
     if (this.paused || this.stopped) return;
     this.paused = true;
+    this.killTails();
     this.current?.deck.pause();
     this.send("state", this.getState());
   }
@@ -634,6 +849,7 @@ export class PlayoutEngine extends EventEmitter {
   stop(): void {
     this.stopped = true;
     this.paused = false;
+    this.killTails();
     if (this.current) this.finishCurrent("stopped");
     this.preloaded?.deck.stop();
     this.preloaded = null;
@@ -649,6 +865,7 @@ export class PlayoutEngine extends EventEmitter {
     const old = this.current;
     this.fadeOut(old.deck, 100);
     this.finishCurrent("cut");
+    this.killTails();
     this.tick();
   }
 
@@ -696,6 +913,7 @@ export class PlayoutEngine extends EventEmitter {
   }
 
   queueJump(uid: string): void {
+    this.assertAutomation();
     const idx = this.queue.findIndex((q) => q.uid === uid);
     if (idx === -1) throw new Error("item not in queue");
     const item = this.queue[idx]!;
@@ -731,6 +949,7 @@ export class PlayoutEngine extends EventEmitter {
 
   /** Interrupt / play-now: the interrupted track resumes afterwards from where it was. */
   playNow(item: QueueItem): void {
+    this.assertAutomation();
     if (this.current && !this.current.item.locked) {
       const pos = this.current.deck.position;
       const rest = this.current.item;
@@ -748,6 +967,7 @@ export class PlayoutEngine extends EventEmitter {
       }
       const old = this.current;
       this.fadeOut(old.deck, 150);
+      this.killTails();
       this.finishCurrent("cut");
     }
     this.interrupted = true;
@@ -778,6 +998,7 @@ export class PlayoutEngine extends EventEmitter {
   }
 
   replayLast(): void {
+    this.assertAutomation();
     const last = this.history.find((h) => h.mediaId !== null && h.kind !== "news");
     if (!last) throw new Error("nothing to replay");
     this.playNow({ ...last, uid: randomUUID(), plannedStart: null, locked: false });
@@ -811,6 +1032,7 @@ export class PlayoutEngine extends EventEmitter {
   }
 
   private enterTakeover(): void {
+    this.killTails();
     if (this.current) {
       const pos = this.current.deck.position;
       this.takeoverSaved = {
@@ -937,7 +1159,115 @@ export class PlayoutEngine extends EventEmitter {
     this.monitor = enabled;
   }
 
+  /* ── Manual mode + studio players ─────────────────────────────────── */
+
+  private assertAutomation(): void {
+    if (this.manual)
+      throw new Error("manual mode: use the studio players, or hand back to automation first");
+  }
+
+  /** Studio takes over: automation fades out and holds (resumed on hand-back). */
+  enterManual(): void {
+    if (this.manual) return;
+    this.manual = true;
+    this.paused = false;
+    this.silentSince = null;
+    this.killTails();
+    if (this.takeoverSaved) {
+      // Live takeover had already parked a track: carry it over.
+      this.manualSaved = this.takeoverSaved;
+      this.takeoverSaved = null;
+    }
+    const cur = this.current;
+    if (cur) {
+      this.manualSaved ??= {
+        item: cur.item,
+        position: cur.deck.position,
+        boundaryAt: this.pendingLocked()?.plannedStart ?? Number.POSITIVE_INFINITY,
+      };
+      if (cur.deck.state === "playing") {
+        this.fadeOut(cur.deck, MANUAL_FADE_MS);
+        this.finishCurrent("cut");
+      } else this.finishCurrent("stopped");
+    }
+    this.preloaded?.deck.stop();
+    this.preloaded = null;
+    this.log("manual mode: studio players on air, automation on hold");
+    this.send("now_playing", this.nowPlaying());
+    this.send("state", this.getState());
+  }
+
+  /** Hand back to automation: studio players fade out; the held track resumes or the plan rejoins. */
+  exitManual(): void {
+    if (!this.manual) return;
+    this.manual = false;
+    this.silentSince = null;
+    this.studio.release(HANDBACK_FADE_SECONDS);
+    const saved = this.manualSaved;
+    this.manualSaved = null;
+    const rest = saved ? saved.item.duration - saved.position : 0;
+    if (saved && this.now() < saved.boundaryAt && rest > 10) {
+      const pos = saved.position;
+      this.queue.unshift({
+        ...saved.item,
+        uid: randomUUID(),
+        cueIn: saved.item.cueIn + pos,
+        duration: rest,
+        fadeIn: 1,
+        plannedStart: null,
+        locked: false,
+        intro: null,
+        outro: saved.item.outro !== null && saved.item.outro > pos ? saved.item.outro - pos : null,
+      });
+      this.send("queue", { items: this.queue });
+    } else {
+      this.resync();
+    }
+    this.log("manual mode ended: automation resumed");
+    this.tick();
+    this.send("state", this.getState());
+  }
+
+  setManual(enabled: boolean): void {
+    if (enabled) this.enterManual();
+    else this.exitManual();
+  }
+
+  /** Loads a media item, or takes an item out of the automation queue, into a player. */
+  studioLoad(player: StudioPlayerId, item: QueueItem | null, queueUid?: string, cue = 0): void {
+    let toLoad = item;
+    if (queueUid) {
+      const idx = this.queue.findIndex((q) => q.uid === queueUid);
+      if (idx === -1) throw new Error("item not in queue");
+      toLoad = this.queue[idx]!;
+      this.studio.player(player).load({ ...toLoad, source: "manual" }, cue);
+      this.queue.splice(idx, 1);
+      if (this.preloaded?.item.uid === queueUid) {
+        this.preloaded.deck.stop();
+        this.preloaded = null;
+      }
+      this.send("queue", { items: this.queue });
+      return;
+    }
+    if (!toLoad) throw new Error("nothing to load");
+    this.studio.player(player).load(toLoad, cue);
+  }
+
+  studioCommand(player: StudioPlayerId, action: "play" | "pause" | "stop" | "eject"): void {
+    this.studio.player(player)[action]();
+  }
+
   /* ── State ─────────────────────────────────────────────────────────── */
+
+  /** Mode shown to the console: manual wins over autoplay but not over live/emergency. */
+  private effectiveMode(): PlayoutMode {
+    if (
+      this.manual &&
+      (this.mode === "autoplay" || this.mode === "interrupt" || this.mode === "idle")
+    )
+      return "manual";
+    return this.mode;
+  }
 
   nowPlaying(): PlayoutState["nowPlaying"] {
     if (!this.current) return null;
@@ -964,7 +1294,7 @@ export class PlayoutEngine extends EventEmitter {
       },
     };
     return {
-      mode: this.mode,
+      mode: this.effectiveMode(),
       paused: this.paused,
       stopped: this.stopped,
       nowPlaying: this.nowPlaying(),
@@ -991,6 +1321,7 @@ export class PlayoutEngine extends EventEmitter {
       currentPlan: this.currentPlan,
       uptimeSeconds: Math.round((Date.now() - this.startedAt) / 1000),
       sampleClock: this.mixer.framesMixed,
+      studio: this.studio.state(this.manual),
     };
   }
 }

@@ -14,6 +14,8 @@
 #                          plugin, like Liquidsoap/AzuraCast), a libStereoTool*.so, or a directory
 #                          with either the .so or the legacy stereotool_cmd; installed to /opt/stereotool
 #   --preset FILE          Stereo Tool preset (.sts) copied to /etc/radio/stereotool.sts
+#   --stereotool-key KEY   Stereo Tool licence key (or @FILE to read it from a file, which keeps
+#                          it out of your shell history); stored 0600 in /srv/radio/var/stereotool
 #   --media DIR            existing media library to link as /srv/radio/media
 #   --emergency FILE       emergency loop audio file
 #   --station-name NAME    station name for the first config
@@ -28,6 +30,7 @@ SKIP_CERTBOT=0
 ST_BYPASS=0
 ST_DIR=""
 ST_PRESET=""
+ST_KEY=""
 MEDIA_SRC=""
 EMERGENCY_SRC=""
 STATION_NAME="My Radio Station"
@@ -42,13 +45,14 @@ while [[ $# -gt 0 ]]; do
     --stereotool-bypass) ST_BYPASS=1; shift ;;
     --stereotool) ST_DIR="$2"; shift 2 ;;
     --preset) ST_PRESET="$2"; shift 2 ;;
+    --stereotool-key) ST_KEY="$2"; shift 2 ;;
     --media) MEDIA_SRC="$2"; shift 2 ;;
     --emergency) EMERGENCY_SRC="$2"; shift 2 ;;
     --station-name) STATION_NAME="$2"; shift 2 ;;
     --staging) STAGING=1; shift ;;
     --no-start) NO_START=1; shift ;;
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -84,6 +88,18 @@ as_radio() {
 }
 
 [[ $EUID -eq 0 || $DRY -eq 1 ]] || { echo "run as root (sudo)" >&2; exit 1; }
+
+# Fail before touching the system when a path argument is wrong (e.g. "/~/file" instead of "~/file").
+die() { echo -e "\033[1;31merror:\033[0m $*" >&2; exit 2; }
+[[ -z "$ST_DIR" || -e "$ST_DIR" ]] || die "--stereotool: $ST_DIR does not exist (use an absolute path; '~' is not expanded after '/')"
+[[ -z "$ST_PRESET" || -f "$ST_PRESET" ]] || die "--preset: $ST_PRESET is not a file"
+[[ -z "$MEDIA_SRC" || -d "$MEDIA_SRC" ]] || die "--media: $MEDIA_SRC is not a directory"
+[[ -z "$EMERGENCY_SRC" || -f "$EMERGENCY_SRC" ]] || die "--emergency: $EMERGENCY_SRC is not a file"
+if [[ "$ST_KEY" == @* ]]; then
+  [[ -f "${ST_KEY#@}" ]] || die "--stereotool-key: ${ST_KEY#@} is not a file"
+  ST_KEY="$(tr -d '\r\n' <"${ST_KEY#@}")"
+fi
+[[ -z "$ST_KEY" || ${#ST_KEY} -ge 8 ]] || die "--stereotool-key: that does not look like a licence key"
 
 step "Preflight"
 . /etc/os-release 2>/dev/null || true
@@ -126,7 +142,7 @@ getent group icecast >/dev/null && run usermod -aG icecast radio || true
 
 step "Application code"
 if [[ "$SRC_DIR" != "$APP" ]]; then
-  run rsync -a --delete --chmod=D755,F644 --exclude node_modules --exclude data --exclude .git --exclude 'apps/*/dist' --exclude 'packages/*/dist' --exclude test-results --exclude '*.tsbuildinfo' --exclude playwright-report "$SRC_DIR/" "$APP/"
+  run rsync -a --delete --chmod=D755,F644 --exclude node_modules --exclude data --exclude .git --exclude 'apps/*/dist' --exclude 'packages/*/dist' --exclude test-results --exclude '*.tsbuildinfo' --exclude playwright-report --exclude coverage --exclude .env --exclude '*.zip' --exclude '*.sts' --exclude '*.lic' "$SRC_DIR/" "$APP/"
   run chown -R radio:radio "$APP"
   run chmod 755 "$APP"/scripts/*.sh
 fi
@@ -195,6 +211,14 @@ if [[ -n "$MEDIA_SRC" ]]; then
   if [[ ! -L "$ROOT/media" ]]; then run mv "$ROOT/media" "$ROOT/media.empty"; run ln -s "$MEDIA_SRC" "$ROOT/media"; fi
   info "linked $MEDIA_SRC → $ROOT/media (the radio user needs read access)"
 fi
+# A linked library does not have the standard folders yet (the emergency loop below needs Emergency/).
+for d in Inbox Nieuws Emergency General Jingles; do
+  if [[ ! -d "$ROOT/media/$d" ]]; then
+    run mkdir -p "$ROOT/media/$d"
+    # Mounted filesystems (NFS, WSL /mnt/*) may refuse chown; the folder is still usable.
+    run chown radio:radio "$ROOT/media/$d" 2>/dev/null || true
+  fi
+done
 EMERGENCY="$ROOT/media/Emergency/emergency-loop.mp3"
 if [[ -n "$EMERGENCY_SRC" ]]; then run install -o radio -g radio -m 644 "$EMERGENCY_SRC" "$EMERGENCY"; fi
 if [[ ! -f "$EMERGENCY" ]]; then
@@ -253,15 +277,22 @@ else
     # Prefer the plugin library whenever it is installed.
     set_conf --arg lib "$LIB" '.stereotool.inputMode = "plugin" | .stereotool.library = $lib'
     run mkdir -p "$ROOT/var/stereotool" && run chown radio:radio "$ROOT/var/stereotool"
+    KEYFILE="$ROOT/var/stereotool/license.key"
+    if [[ -n "$ST_KEY" && $DRY -eq 0 ]]; then
+      (umask 077 && printf '%s\n' "$ST_KEY" >"$KEYFILE") && chown radio:radio "$KEYFILE" && chmod 600 "$KEYFILE"
+      info "licence key stored in $KEYFILE (change it later in Settings → Outputs)"
+    fi
+    # The key file wins over secrets.env (same rule as the playout worker).
+    KEYENV=""; [[ -s "$KEYFILE" ]] && KEYENV="STEREOTOOL_LICENSE_KEY=\"\$(cat '$KEYFILE')\" "
     # Load it once as the radio user: version, latency, preset and licence check.
     PROBE_CFG="$(jq -nc --arg lib "$LIB" --arg preset "$( [[ -f "$PRESET" ]] && echo "$PRESET" )" --arg home "$ROOT/var/stereotool" \
       '{library: $lib, preset: (if $preset == "" then null else $preset end), loadType: "totalinit", licenseKeyEnv: "STEREOTOOL_LICENSE_KEY", home: $home}')"
     if [[ $DRY -eq 0 ]]; then
-      PROBE="$(as_radio "set -a && . '$SECRETS' && set +a && STEREOTOOL_HOST='$PROBE_CFG' node '$APP/apps/playout/bin/stereotool-host.mjs' --probe 2>&1" | grep '^@stereotool ' | sed 's/^@stereotool //' || true)"
+      PROBE="$(as_radio "set -a && . '$SECRETS' && set +a && ${KEYENV}STEREOTOOL_HOST='$PROBE_CFG' node '$APP/apps/playout/bin/stereotool-host.mjs' --probe 2>&1" | grep '^@stereotool ' | sed 's/^@stereotool //' || true)"
       if [[ -n "$PROBE" ]]; then
         info "libStereoTool $(jq -r '.softwareVersion' <<<"$PROBE") (API $(jq -r '.apiVersion' <<<"$PROBE")), latency $(jq -r '.latencyMs' <<<"$PROBE") ms, licence valid: $(jq -r '.valid' <<<"$PROBE")"
-        [[ "$(jq -r '.unlicensedFeatures' <<<"$PROBE")" == "" ]] || warn "unlicensed features in the preset: $(jq -r '.unlicensedFeatures' <<<"$PROBE") — set STEREOTOOL_LICENSE_KEY in $SECRETS"
-        if grep -q '^STEREOTOOL_LICENSE_KEY=.\+' "$SECRETS" 2>/dev/null; then EDITION=live; else EDITION=free; fi
+        [[ "$(jq -r '.unlicensedFeatures' <<<"$PROBE")" == "" ]] || warn "unlicensed features in the preset: $(jq -r '.unlicensedFeatures' <<<"$PROBE") — pass --stereotool-key or set it in Settings → Outputs"
+        if [[ -s "$KEYFILE" ]] || grep -q '^STEREOTOOL_LICENSE_KEY=.\+' "$SECRETS" 2>/dev/null; then EDITION=live; else EDITION=free; fi
         set_conf --arg e "$EDITION" '.stereotool.edition = $e'
       else
         warn "libStereoTool at $LIB could not be loaded or the preset failed (see: journalctl -u radio-playout$SUFFIX)"

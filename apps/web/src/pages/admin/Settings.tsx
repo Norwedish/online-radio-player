@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuth } from "../../hooks/auth";
-import { errorMessage, get, patch, post, put } from "../../lib/api";
+import { del, errorMessage, get, patch, post, put } from "../../lib/api";
 import { bytes, dateTime } from "../../lib/format";
 import {
   Badge,
   Button,
   Field,
+  InfoTip,
   Input,
   Panel,
   PageHeader,
@@ -23,6 +24,8 @@ interface SettingRow {
   value: unknown;
   category: string;
   label: string;
+  /** Plain-language explanation (ⓘ tooltip). */
+  help?: string;
   reloadsWorker: boolean;
 }
 
@@ -106,10 +109,11 @@ export default function Settings() {
               checked={Boolean(draft[s.key])}
               onChange={(v) => setDraft({ ...draft, [s.key]: v })}
               label={s.label}
+              info={s.help}
               disabled={!manage}
             />
           ) : Array.isArray(s.value) ? (
-            <Field key={s.key} label={s.label} hint="One per line">
+            <Field key={s.key} label={s.label} info={s.help} hint="One per line">
               {(id) => (
                 <Textarea
                   id={id}
@@ -131,6 +135,7 @@ export default function Settings() {
             <Field
               key={s.key}
               label={s.label}
+              info={s.help}
               hint={s.reloadsWorker ? "Applied to playout immediately" : undefined}
             >
               {(id) => (
@@ -186,7 +191,10 @@ export default function Settings() {
       {tab === "station" ? (
         <Panel>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Station name">
+            <Field
+              label="Station name"
+              info="Shown on the listener page, the public schedule, the browser tab title and the console header. The name in the stream itself (what radio apps show) and in alert e-mails comes from station.json on the server."
+            >
               {(id) => (
                 <Input
                   id={id}
@@ -196,7 +204,11 @@ export default function Settings() {
                 />
               )}
             </Field>
-            <Field label="Time zone" hint="Hours, news and the generator follow this zone.">
+            <Field
+              label="Time zone"
+              info="The station's local time. The news at :00 and :30, the hourly schedule, the playlist generator and all times in the console follow this zone, including summer/winter time changes."
+              hint="Hours, news and the generator follow this zone."
+            >
               {(id) => (
                 <Select
                   id={id}
@@ -210,7 +222,10 @@ export default function Settings() {
                 </Select>
               )}
             </Field>
-            <Field label="Logo URL">
+            <Field
+              label="Logo URL"
+              info="Image shown next to the station name at the top of the listener page. Use a full https:// address or a path on this server (e.g. /branding/logo.png). Leave empty to show only the name."
+            >
               {(id) => (
                 <Input
                   id={id}
@@ -222,7 +237,10 @@ export default function Settings() {
               )}
             </Field>
             <div className="flex gap-4">
-              <Field label="Brand colour">
+              <Field
+                label="Brand colour"
+                info="Accent colour of the listener page and public schedule: play button, links and highlights."
+              >
                 {(id) => (
                   <input
                     id={id}
@@ -234,7 +252,10 @@ export default function Settings() {
                   />
                 )}
               </Field>
-              <Field label="Listener page background">
+              <Field
+                label="Listener page background"
+                info="Background colour of the listener page and public schedule. Pick a dark colour so the light text stays readable."
+              >
                 {(id) => (
                   <input
                     id={id}
@@ -299,14 +320,111 @@ export default function Settings() {
           note="Errors and critical alerts are emailed to these addresses. Webhooks are configured in station.json."
         />
       ) : null}
-      {tab === "outputs" ? <Outputs /> : null}
+      {tab === "outputs" ? <Outputs manage={manage} /> : null}
       {tab === "triggers" ? <Triggers manage={manage} /> : null}
-      {tab === "backups" ? <Backups manage={manage} /> : null}
+      {tab === "backups" ? (
+        <div className="flex flex-col gap-4">
+          <SettingsForm cat="backups" note="How many automatic backups are kept on the server." />
+          <Backups manage={manage} />
+        </div>
+      ) : null}
     </>
   );
 }
 
-function Outputs() {
+/** Stereo Tool configuration read-outs (set in station.json on the server). */
+const ST_INFO: Record<string, string> = {
+  enabled: "Whether audio goes through Stereo Tool. Off = the station plays unprocessed.",
+  binary: "Path of the legacy stereotool_cmd program (only used in stdio-pcm mode).",
+  preset: "Your Stereo Tool settings file (.sts) with the station's processing sound.",
+  edition:
+    "Detected at install: 'live' with a licence key, 'free' without. The status below shows the real licence state.",
+  inputMode:
+    "plugin = Thimeo's libStereoTool library (recommended, like AzuraCast); stdio-pcm = the older command-line program.",
+  args: "Command-line arguments for the legacy program (stdio-pcm mode only).",
+  wavIo: "Legacy mode only: whether audio is framed as WAV for the command-line program.",
+  restart: "How often and how fast Stereo Tool is restarted automatically after a crash.",
+  bypassOnFailure:
+    "If Stereo Tool keeps failing, play unprocessed audio instead of going silent (and raise an alert).",
+  mock: "Test mode with a fake Stereo Tool (development only).",
+  licenseKey: "Where the licence key comes from: entered below, from secrets.env, or not set.",
+};
+
+const KEY_SOURCE: Record<string, string> = {
+  console: "entered here",
+  secrets: "from secrets.env",
+  none: "not set",
+};
+
+/** Stereo Tool licence key: saved on the server (never shown again) and applied at once. */
+function LicenseKey({ source, onChanged }: { source: string; onChanged: () => void }) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      setKey("");
+      toast.success(ok);
+      onChanged();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-4 flex flex-col gap-2 border-t border-line pt-3">
+      <Field
+        label="Licence key"
+        info="Your Thimeo Stereo Tool registration key. It unlocks the processing features your preset uses; without it Stereo Tool still runs but mixes beeps or a voice into the stream. The key is stored on the server only and never shown again."
+        hint={`Current key: ${KEY_SOURCE[source] ?? source}`}
+      >
+        {(id) => (
+          <Input
+            id={id}
+            type="password"
+            autoComplete="off"
+            placeholder="Paste your Stereo Tool key"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          tone="primary"
+          busy={busy}
+          disabled={key.trim().length < 8}
+          onClick={() =>
+            run(
+              () => put("/api/settings/stereotool/license", { key: key.trim() }),
+              "Licence key saved — Stereo Tool restarted",
+            )
+          }
+        >
+          Save key
+        </Button>
+        {source === "console" ? (
+          <Button
+            busy={busy}
+            onClick={() =>
+              run(() => del("/api/settings/stereotool/license"), "Licence key removed")
+            }
+          >
+            Remove key
+          </Button>
+        ) : null}
+      </div>
+      <p className="text-xs text-faint">
+        Saving restarts Stereo Tool (a second of unprocessed audio). Check that the status below
+        says <em>licensed</em>; an unlicensed key adds beeps to the stream.
+      </p>
+    </div>
+  );
+}
+
+function Outputs({ manage }: { manage: boolean }) {
   const st = useQuery({
     queryKey: ["st"],
     queryFn: () =>
@@ -334,7 +452,10 @@ function Outputs() {
         <dl className="grid grid-cols-[140px_1fr] gap-y-1.5 text-sm">
           {Object.entries(st.data?.config ?? {}).map(([k, v]) => (
             <div key={k} className="contents">
-              <dt className="text-muted">{k}</dt>
+              <dt className="inline-flex items-center gap-1.5 text-muted">
+                {k}
+                {ST_INFO[k] ? <InfoTip text={ST_INFO[k]} label={`About ${k}`} /> : null}
+              </dt>
               <dd className="truncate">{typeof v === "object" ? JSON.stringify(v) : String(v)}</dd>
             </div>
           ))}
@@ -345,13 +466,38 @@ function Outputs() {
             <Badge tone={st.data.status.running ? "good" : "bad"}>
               {st.data.status.bypassed ? "bypassed" : "processing"}
             </Badge>{" "}
+            {st.data.status.edition ? (
+              <Badge tone={String(st.data.status.edition).includes("unlicensed") ? "warn" : "good"}>
+                {String(st.data.status.edition)}
+              </Badge>
+            ) : null}{" "}
             {st.data.status.error ? (
               <span className="text-clip">{String(st.data.status.error)}</span>
             ) : null}
           </p>
         ) : null}
+        {manage && st.data?.config.enabled ? (
+          <LicenseKey
+            source={String(st.data.config.licenseKey ?? "none")}
+            // The status needs a moment after the restart before it reports the licence.
+            onChanged={() => {
+              void st.refetch();
+              setTimeout(() => void st.refetch(), 4000);
+            }}
+          />
+        ) : null}
       </Panel>
-      <Panel title="Icecast mounts">
+      <Panel
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            Icecast mounts
+            <InfoTip
+              text="The streams listeners connect to (e.g. /hq.mp3), with codec and bitrate. 'up' means the encoder is sending audio to Icecast; 'primary' is the stream the listener page plays first. Mounts are configured in station.json."
+              label="About Icecast mounts"
+            />
+          </span>
+        }
+      >
         <ul className="flex flex-col gap-1.5 text-sm">
           {ic.data?.config.mounts.map((m) => {
             const enc = ic.data?.encoders.find((e) => e.mount === m.name);
@@ -418,10 +564,30 @@ function Triggers({ manage }: { manage: boolean }) {
       <Table>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Label</th>
-            <th>Action</th>
-            <th>Media / event id</th>
+            {(
+              [
+                [
+                  "ID",
+                  "Part of the button's address: POST /api/triggers/<id>. 2–40 lowercase letters, digits or dashes; unique per button.",
+                ],
+                ["Label", "A name for yourself, e.g. 'Stream Deck – Skip'. Only shown here."],
+                [
+                  "Action",
+                  "What pressing the button does: skip a track, pause/resume, start or clear the emergency loop, play a track now, a voice-over, start/stop live, or start an event.",
+                ],
+                [
+                  "Media / event id",
+                  "For play_now and voice_over: the track's number from the Media library. For event_start: the event's number. Other actions ignore it.",
+                ],
+              ] as const
+            ).map(([h, info]) => (
+              <th key={h}>
+                <span className="inline-flex items-center gap-1.5">
+                  {h}
+                  <InfoTip text={info} label={`About ${h}`} />
+                </span>
+              </th>
+            ))}
             <th />
           </tr>
         </thead>

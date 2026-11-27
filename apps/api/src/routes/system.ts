@@ -218,11 +218,11 @@ export async function systemRoutes(
    * nginx routes /ws/live straight to the worker in production; this relay
    * covers single-process setups (demo, tests, no nginx). The worker checks
    * the one-time token itself. */
-  app.get("/ws/live", { websocket: true }, (socket, req) => {
+  const relayLive = (upstreamPath: string) => (socket: WebSocket, req: { url: string }) => {
     const token = new URL(req.url, "http://x").searchParams.get("token") ?? "";
     const port = Number(process.env.PLAYOUT_LIVE_PORT ?? ctx.config.worker.protocolPort + 1);
     const upstream = new WebSocket(
-      `ws://127.0.0.1:${port}/live?token=${encodeURIComponent(token)}`,
+      `ws://127.0.0.1:${port}${upstreamPath}?token=${encodeURIComponent(token)}`,
     );
     const pending: (Buffer | string)[] = [];
     upstream.on("open", () => pending.splice(0).forEach((m) => upstream.send(m)));
@@ -238,7 +238,10 @@ export async function systemRoutes(
       else if (upstream.readyState === WebSocket.CONNECTING) pending.push(msg);
     });
     socket.on("close", () => upstream.close());
-  });
+  };
+  app.get("/ws/live", { websocket: true }, relayLive("/live"));
+  // Studio monitor (pre-Stereo Tool PCM to the browser).
+  app.get("/ws/live/monitor", { websocket: true }, relayLive("/live/monitor"));
 
   /* ── WebSocket hub (§6.8) ──────────────────────────────────────────── */
   app.get("/ws", { websocket: true }, (socket, req) => {

@@ -190,9 +190,25 @@ export class GeneratorService {
       .map((n) => byName.get(n))
       .filter((p) => p && p.enabled)
       .map((p) => p!.id);
-    const music = this.repos.playlists
-      .pool(ids)
-      .map((e) => this.toCandidate(e.media, e.playlistId, e.weight, plays));
+    const rows = this.repos.playlists.pool(ids);
+    // Playlist weight works like AzuraCast's: it sets how often that *playlist* gets a turn,
+    // whatever its size (80s at weight 9 vs 10s at weight 20 ≈ 9:20 of the picks). Each song
+    // gets weight/size of its playlist, scaled so a single-playlist pool is unchanged.
+    const sizes = new Map<number, number>();
+    for (const e of rows) sizes.set(e.playlistId, (sizes.get(e.playlistId) ?? 0) + 1);
+    const plWeight = (id: number) => Math.max(0, playlists.find((p) => p.id === id)?.weight ?? 1);
+    const totalWeight = [...sizes.keys()].reduce((sum, id) => sum + plWeight(id), 0);
+    const music = rows.map((e) =>
+      this.toCandidate(
+        e.media,
+        e.playlistId,
+        totalWeight > 0
+          ? (e.weight * plWeight(e.playlistId) * rows.length) /
+              (sizes.get(e.playlistId)! * totalWeight)
+          : e.weight,
+        plays,
+      ),
+    );
     // Empty hour playlist → fall back to General so the station never runs dry.
     let source = names;
     if (music.length === 0 && !settings.fallback_mode) {

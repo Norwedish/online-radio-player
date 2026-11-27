@@ -13,11 +13,11 @@ How to run the station from the web console at `https://<domain>/admin`. Install
 3. _Settings → Station_: name, tagline, colours and logo used on the public `/listen` page.
 4. _Users_: create accounts for the team. Pick the role that fits:
 
-| Role         | Can                                                                                                         | Cannot                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| **Admin**    | Everything                                                                                                  | —                                       |
-| **Operator** | Playout, media and playlists, schedule, requests, events, stats, alerts, recordings                         | Users, settings, API keys, audit log    |
-| **DJ**       | Live studio, playout controls, request moderation, own shift reports; read-only media/schedule/stats/alerts | Edit media, schedule, settings or users |
+| Role         | Can                                                                                                              | Cannot                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| **Admin**    | Everything                                                                                                       | —                                       |
+| **Operator** | Studio (players, automation; no mic), media and playlists, schedule, requests, events, stats, alerts, recordings | Users, settings, API keys, audit log    |
+| **DJ**       | Studio incl. microphone, request moderation, own shift reports; read-only media/schedule/stats/alerts            | Edit media, schedule, settings or users |
 
 Forgotten passwords: users can use _Forgot password_ on the login page (needs SMTP); an admin can
 set a new password under _Users_. Deactivating a user ends all their sessions.
@@ -49,10 +49,34 @@ media/
   `missing`. Unchanged files are skipped, so rescans are quick.
 - **Watch folder**: files dropped into `Inbox/` (or copied over SMB/NFS) are imported within a
   few seconds.
+- **News bulletins**: the two news files (paths in the generator settings, default
+  `Nieuws/nieuws-heel-uur.mp3` and `Nieuws/nieuws-half-uur.mp3`) are checked every 10 s in
+  the media root and in every enabled NAS path (`media.nasPaths`). It doesn't wait for the
+  periodic scan. A replaced bulletin is re-imported and re-analysed once its size and
+  modification time are the same on two checks in a row, so a new version is ready within
+  about 20 s. Writers should save to a hidden temp file (for example `.nieuws-heel-uur.mp3.tmp`)
+  and rename it over the old one; temp and hidden files are ignored. If the same file exists in
+  more than one place, the media root wins, then the NAS paths in config order, and a warning is
+  logged.
 - **Upload**: drag files onto the library page (up to 500 MB each; the content must really be
   audio).
 - **Loudness**: every track is measured (EBU R128) in the background and played at the station
   target (default −16 LUFS, _Settings → Audio_). Files are never modified.
+- **Crossfades**: the same measurement finds where each song starts, where its ending drops
+  below the crossfade threshold, and where it goes silent (_Settings → Audio → Autocue_). The
+  next song starts at that crossfade point at full level, with no fade-in. How the old song
+  leaves depends on how loud the new intro is compared with the old song's tail:
+  - **Louder intro:** the old song fades out within 1 s.
+  - **Quieter intro:** the old song plays out its own ending and fades only in the last 0.5 s,
+    so no hole opens.
+  - **In between:** somewhere between those two.
+
+  A song that stops abruptly has no fade region; the next one starts the moment it ends. A song
+  can also start under the fading end of the news or a jingle, but the news and jingles always
+  start on their own. The overlap is capped by _max overlap_ (default 6 s). A less negative
+  crossfade threshold (Liquidsoap's default is −7 dB) starts the next song earlier, while the
+  old one is still clearly audible.
+
 - **Tags**: click a track to edit artist/title/album/year, cue in/out, fades and gain, replace
   artwork, preview it, or _Look up on MusicBrainz_. Suggestions land in the _Metadata
   suggestions_ tab; apply or reject them. Tracks without tags get artist/title from an
@@ -77,26 +101,81 @@ The station runs a fixed grid of **24 one-hour slots**, each fed by its own play
 - **Boundary log**: how each :00/:30 news join went (cut, let finish, early/late news) and by how
   much. The tolerance is _Settings → Audio → Boundary tolerance_ (default 45 s).
 
-## 4. Playout console
+## 4. Studio
 
-_Playout_ shows what is on air, the queue, history, meters, encoder and Stereo Tool status.
+_Studio_ is one console for automated and manual operation: two on-air players, cart pads, a
+headphone pre-listen player, the automation queue, the microphone, the mixer, and encoder/Stereo
+Tool status. (The old _Playout_ and _Live studio_ addresses open the Studio.)
 
-- Transport: **Skip**, **Pause/Resume**, **Stop/Start automation**, **Replay last**, seek.
+**Library drawer**: the song browser at the bottom of the screen, over the studio. When it is
+closed, only the **Library** tab shows in the bottom-right corner. _Load_, _Queue a track_ and
+_Find_ open it with the search box ready. It remembers whether you left it open, and you can drag
+its top edge to resize it.
+
+- **Search** the whole library: artist, title, album or folder. More results load as you scroll.
+- **Filter** by playlist (for example _Nieuws_ for the bulletins, or a decade) and sort by artist,
+  title, recently added or length.
+- **Drag** a track onto player A or B to load it, or between queue items to insert it there. Below
+  the last item adds it at the end. While you drag, the drawer fades and lets the pointer through,
+  so you can drop on the queue under it.
+- Or use the row buttons: 🎧 pre-listen (or double-click the row), **A** / **B** load, and _Queue
+  next_.
+
+**Automation** (the station runs itself):
+
+- Transport: **Skip**, **Pause/Resume**, **Stop/Start automation**, **Replay last**.
 - Keyboard: **Space** pause/resume, **→** skip, **R** replay last (not while typing in a field).
-- Queue: drag to reorder, remove, _Insert_ a track, _Jump_ to an item.
-- **Cart wall**: the Jingles playlist as buttons; a click plays the jingle now (stinger),
-  interrupting the track, which resumes afterwards.
+- Queue: drag to reorder, remove, _Jump_ (▶) to an item, 🎧 pre-listen, or **A**/**B** to take the
+  item out of the queue and load it into a player. Add tracks from the library drawer.
 - **Voice-over**: plays a short file over the music with ducking.
-- **Master fader** and **monitor**.
-- **Emergency**: switches to the emergency loop; clear it to return to automation. The worker
-  also does this by itself after `audio.silenceSeconds` of silence.
+
+**Players A and B** (manual operation):
+
+- **Load** a track from the library drawer (drag it onto the player, or press A/B on a library or
+  queue row). The player shows remaining and elapsed
+  time, an **intro** countdown (to where the vocals start), an **outro** countdown, the **cue
+  point** and the **loop** length. Click the progress bar (or use ←/→ on it) to seek.
+- **Play/Pause**, **Stop** (back to the cue point), **Fade** (3 s fade-out, then back to cue),
+  **Cue here** (set the cue point to the current position), **Loop** (repeat from the cue point),
+  **Auto-next** (when this player ends or starts fading, the other player starts — a hand-made
+  crossfade), a per-player **fader** (double-click for 0 dB) and level meter.
+- Keyboard: **1** / **2** play or pause player A / B.
+- **Manual mode**: pressing play on a player takes over from automation — the automation track
+  fades out and is held. **Hand back to automation** fades the players out; automation resumes the
+  held track (or rejoins the schedule if a news boundary has passed). _Take manual control_ does the
+  same without starting a player. In manual mode 60 s of silence hands back automatically.
+- Intro/outro markers are set per track in _Media library → track → Intro end / Outro start_; the
+  crosshair button takes the position from the preview player.
+
+**Cart pads** fire jingles/sweepers from a playlist (Jingles by default) on top of whatever is on
+air, without taking over; a playing pad lights up — press it again to stop it.
+
+**Pre-listen** plays a track in your browser only (listeners never hear it), honouring cue in/out,
+on a separate output device where the browser supports it. **To A / To B** loads it into a player
+starting at the position you reached. Drag a track from the library drawer, or an item from the
+queue (the locked news too), onto _Pre-listen_ to hear it. Drag the pre-listen track by its title
+onto player A or B to load it from the position you reached, or into the queue.
+
+**Direct monitor** lets you hear the studio mix _before_ Stereo Tool, about 150 ms behind (the
+listener stream is processed and several seconds behind). Start it in _Studio → Direct monitor_,
+or pick _Direct (no processing)_ in the header player — it keeps playing on every page. Your own
+mic is left out by default (hearing yourself delayed is disorienting); switch _Include my
+microphone_ on to hear exactly what goes into Stereo Tool. _Light 24 kHz_ halves the bandwidth
+(≈0.8 Mbit/s instead of 1.5); raise _Delay_ if you hear dropouts on a slow connection. Starting
+the monitor stops the header's stream player and the other way round.
+
+**Mixer**: master and per-bus meters (the _Studio_ bus carries the players and carts; it ducks
+under the mic like automation), and the **master fader**.
+
+**Emergency**: switches to the emergency loop; clear it to return to automation. The worker also
+does this by itself after `audio.silenceSeconds` of silence (automation mode).
 
 ## 5. Going live
 
-**From the browser (Live studio).** Pick your microphone, set the gain until the meter peaks
+**From the browser (Studio → Microphone).** Pick your microphone, set the gain until the meter peaks
 around −6 dB, choose **Duck music** (music continues quietly under you) or **Takeover** (music
 stops), tick _Record this session_ if wanted, then **Go live** — a 3-second countdown starts the
-uplink. _Next track preview_ lets you cue what's coming. **End** returns to automation; your
+uplink. Use _Pre-listen_ to cue what's coming. **End live** returns to automation; your
 shift report (duration, tracks, requests) appears under _Stats_.
 
 Use headphones: the studio page never plays the station stream back into your microphone.
@@ -110,7 +189,7 @@ mount through the site:
 - 48 kHz stereo, MP3 or Ogg. When the source connects the worker ducks or takes over per
   _Settings → Live_; when it disconnects, automation resumes.
 
-Recordings are FLAC files under _Live studio → Recordings_, kept for 30 days.
+Recordings are FLAC files (see _Stats_ / the recordings API), kept for 30 days.
 
 ## 6. Requests
 

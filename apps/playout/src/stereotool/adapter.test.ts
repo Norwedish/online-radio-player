@@ -9,8 +9,27 @@ import {
   createStereoTool,
   expandArgs,
   ProcessStereoTool,
+  readLicenseKey,
   type StereoToolConfig,
 } from "./adapter.js";
+
+describe("licence key source", () => {
+  it("prefers the key file (installer/console) over the env var", () => {
+    const dir = mkdtempSync(join(tmpdir(), "st-key-"));
+    const file = join(dir, "license.key");
+    process.env.TEST_ST_ENV_KEY = "env-key";
+    try {
+      expect(readLicenseKey("TEST_ST_ENV_KEY", file)).toBe("env-key");
+      writeFileSync(file, "  file-key\n");
+      expect(readLicenseKey("TEST_ST_ENV_KEY", file)).toBe("file-key");
+      writeFileSync(file, "\n");
+      expect(readLicenseKey("TEST_ST_ENV_KEY", file)).toBe("env-key");
+      expect(readLicenseKey("TEST_ST_NOPE", undefined)).toBe("");
+    } finally {
+      delete process.env.TEST_ST_ENV_KEY;
+    }
+  });
+});
 
 const MOCK = join(import.meta.dirname, "../../../../scripts/mock-stereotool.mjs");
 

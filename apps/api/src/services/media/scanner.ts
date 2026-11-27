@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { extname, join, relative, sep } from "node:path";
+import { extname, isAbsolute, join, relative, sep } from "node:path";
 import type { MediaRow, Repositories } from "@radio/db";
 import type { RuntimeConfig } from "@radio/shared";
 import { parseFilename, probeFile, saveArtwork } from "./probe.js";
@@ -38,6 +38,27 @@ export function mediaRoots(config: RuntimeConfig): MediaRoot[] {
     roots.push({ id: nas.id, path: join(nas.mountPath, nas.relativePath.replace(/^\//, "")) });
   }
   return roots;
+}
+
+/**
+ * Every existing file for a library-relative path ("Nieuws/x.mp3"), in root order:
+ * media.root first, then the enabled NAS paths in config order. Paths that would
+ * escape their root ("../") are never returned.
+ */
+export function locateInRoots(rel: string, roots: MediaRoot[]): string[] {
+  const clean = rel.replace(/^[/\\]+/, "");
+  const found: string[] = [];
+  for (const root of roots) {
+    const full = join(root.path, clean);
+    const inside = relative(root.path, full);
+    if (!inside || inside.startsWith("..") || isAbsolute(inside)) continue;
+    try {
+      if (statSync(full).isFile()) found.push(full);
+    } catch {
+      // not in this root
+    }
+  }
+  return found;
 }
 
 /** Temp/partial/hidden files that must never be imported. */
@@ -183,9 +204,20 @@ export async function importFile(
       size: st.size,
       mtime,
       status: p.duration ? "ok" : "error",
-      // A changed file needs fresh loudness numbers.
+      // A changed file (e.g. a new news bulletin under the same name) needs fresh loudness
+      // numbers, and its old automatic cue points no longer fit: play it whole until the
+      // analysis has run. Cue points the user pinned by hand are kept.
       ...(existing && existing.hash !== hash
-        ? { loudness_lufs: null, peak_db: null, gain_db: null }
+        ? {
+            loudness_lufs: null,
+            peak_db: null,
+            gain_db: null,
+            loudness_envelope: null,
+            autocue_json: null,
+            ...(existing.cue_source !== "manual"
+              ? { cue_in: null, cue_out: null, fade_in: null, fade_out: null }
+              : {}),
+          }
         : {}),
       tags: {
         ...(existing?.tags ?? {}),
@@ -247,6 +279,14 @@ export async function scanLibrary(
       seen.add(file);
       queue.push(file);
     }
+    // An unmounted network share (SMB/NFS) looks like an empty folder: never mark the whole
+    // library missing because of that.
+    if (seen.size === 0 && repos.media.count() > 0) {
+      report.errors.push(
+        `no audio files found in ${root.path} — is the share mounted? Existing tracks were left as they are.`,
+      );
+      continue;
+    }
     let next = 0;
     const worker = async () => {
       while (next < queue.length) {
@@ -274,4 +314,22 @@ export async function scanLibrary(
     `scan done: ${report.files} files, ${report.created} new, ${report.updated} updated, ${report.missing} missing, ${report.errors.length} errors in ${(report.durationMs / 1000).toFixed(1)} s`,
   );
   return report;
+}
+
+/** One scan at a time, whether started from the console or by the periodic job. */
+let running: Promise<ScanReport> | null = null;
+
+export function isScanRunning(): boolean {
+  return running !== null;
+}
+
+/** Starts a scan unless one is running (then returns null). */
+export function scanLibraryOnce(
+  repos: Repositories,
+  config: RuntimeConfig,
+  options: { log?: (m: string) => void } = {},
+): Promise<ScanReport> | null {
+  if (running) return null;
+  running = scanLibrary(repos, config, options).finally(() => (running = null));
+  return running;
 }

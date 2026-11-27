@@ -45,6 +45,8 @@ export function item(path: string, duration: number, extra: Partial<QueueItem> =
     source: "automation",
     requestId: null,
     artworkUrl: null,
+    intro: null,
+    outro: null,
     ...extra,
   };
 }
@@ -73,8 +75,10 @@ export class FakePlanSource implements PlanSource {
   emergencyItems() {
     return this.emergency;
   }
-  media(): MediaRow | undefined {
-    return undefined;
+  /** Library rows by media id (loudness envelopes for crossfade tests). */
+  mediaRows = new Map<number, MediaRow>();
+  media(id: number): MediaRow | undefined {
+    return this.mediaRows.get(id);
   }
   setting<T>(key: string, fallback: T): T {
     return (this.settings[key] as T) ?? fallback;

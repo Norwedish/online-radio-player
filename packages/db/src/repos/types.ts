@@ -111,8 +111,16 @@ export interface MediaRow {
   gain_db: number | null;
   cue_in: number | null;
   cue_out: number | null;
+  intro_end: number | null;
+  outro_start: number | null;
   fade_in: number | null;
   fade_out: number | null;
+  /** Last automatic cue result (JSON: cueIn/cueOut/fadeIn/fadeOut/lufs/at). */
+  autocue_json: string | null;
+  /** Momentary loudness envelope every 100 ms (base64; see @radio/core). */
+  loudness_envelope: string | null;
+  /** 'auto' (analysis may set cue points) or 'manual' (user values win). */
+  cue_source: string | null;
   artwork_path: string | null;
   hash: string | null;
   size: number | null;

@@ -1,6 +1,9 @@
 /** Requests moderation, alerts, stats, settings, backups (PLAN §6.7, M10, M12). */
 import type { FastifyInstance } from "fastify";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { z } from "zod";
+import { secret, stereotoolKeyFile } from "@radio/shared";
 import { backupDatabase, listBackupFiles, type Repositories } from "@radio/db";
 import type { AppContext } from "../context.js";
 import { HttpError, actor, audit, guard, idParam, notFound, parse } from "../http.js";
@@ -472,9 +475,67 @@ export async function operationsRoutes(app: FastifyInstance, ctx: AppContext): P
           restart: st.restart,
           bypassOnFailure: st.bypassOnFailure,
           mock: ctx.config.stereotoolMock,
+          /** Where the licence key comes from (the key itself is never returned). */
+          licenseKey: existsSync(stereotoolKeyFile(ctx.config.dataDir))
+            ? "console"
+            : secret(st.licenseKeyEnv)
+              ? "secrets"
+              : "none",
         },
         status: ctx.worker.lastState?.stereotool ?? null,
       };
+    },
+  );
+
+  // Licence key: stored 0600 in the playout data dir (wins over secrets.env), then
+  // Stereo Tool restarts with it. DELETE falls back to secrets.env (or unlicensed).
+  const reloadStereoTool = async () => {
+    try {
+      return await ctx.worker.send("stereotool:reload", {}, 15_000);
+    } catch (e) {
+      throw new HttpError(
+        503,
+        "worker_unavailable",
+        `saved, but playout did not reload: ${(e as Error).message}`,
+      );
+    }
+  };
+  app.put(
+    "/api/settings/stereotool/license",
+    {
+      preHandler: guard("settings:manage"),
+      config: { summary: "Set the Stereo Tool licence key and reload it", tags: ["settings"] },
+    },
+    async (req) => {
+      const { key } = parse(
+        z.object({
+          key: z
+            .string()
+            .trim()
+            .min(8)
+            .max(4096)
+            .regex(/^[^\r\n]+$/, "one line"),
+        }),
+        req.body,
+      );
+      const file = stereotoolKeyFile(ctx.config.dataDir);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, key + "\n", { mode: 0o600 });
+      chmodSync(file, 0o600);
+      audit(ctx, req, "stereotool.license", "setting", null, { action: "set" });
+      return { status: await reloadStereoTool() };
+    },
+  );
+  app.delete(
+    "/api/settings/stereotool/license",
+    {
+      preHandler: guard("settings:manage"),
+      config: { summary: "Remove the console licence key and reload", tags: ["settings"] },
+    },
+    async (req) => {
+      rmSync(stereotoolKeyFile(ctx.config.dataDir), { force: true });
+      audit(ctx, req, "stereotool.license", "setting", null, { action: "remove" });
+      return { status: await reloadStereoTool() };
     },
   );
 

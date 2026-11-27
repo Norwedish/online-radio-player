@@ -17,7 +17,21 @@ import type { MeterFrame } from "@radio/shared";
 import type { Deck } from "./deck.js";
 import type { LiveBus } from "./live-bus.js";
 
-export type BusName = "automation" | "voiceover" | "live" | "event" | "emergency";
+export type BusName = "automation" | "voiceover" | "live" | "event" | "emergency" | "studio";
+
+/**
+ * A studio source (manual player, cart bank) mixed on the studio bus. It applies
+ * its own fader and meters itself, so each player has its own level.
+ */
+export interface StudioSource {
+  readonly id: string;
+  /** Adds `frames` frames into `out` (interleaved stereo float). */
+  mixInto(out: Float32Array, frames: number): void;
+  /** Peak/RMS since the last read plus the live position, for the 10 Hz meter frame. */
+  readMeter(): { peak: number; rms: number; position: number };
+  /** True while an audible deck is still filling its buffer (test harnesses wait on this). */
+  starving(): boolean;
+}
 
 export interface MixerOptions {
   duckDb: number;
@@ -29,18 +43,21 @@ export interface MixerOptions {
 
 export class Mixer {
   /** Decks currently audible on each bus (more than one during a boundary cut fade). */
-  readonly decks: Record<Exclude<BusName, "live">, Set<Deck>> = {
+  readonly decks: Record<Exclude<BusName, "live" | "studio">, Set<Deck>> = {
     automation: new Set(),
     voiceover: new Set(),
     event: new Set(),
     emergency: new Set(),
   };
+  /** Manual studio players and carts (ducked like automation under the mic/voice-over). */
+  readonly studio: StudioSource[] = [];
   readonly busGain: Record<BusName, number> = {
     automation: 1,
     voiceover: 1,
     live: 1,
     event: 1,
     emergency: 1,
+    studio: 1,
   };
   readonly busMute: Record<BusName, boolean> = {
     automation: false,
@@ -48,6 +65,7 @@ export class Mixer {
     live: false,
     event: false,
     emergency: false,
+    studio: false,
   };
   private readonly duck: Envelope;
   private readonly limiter: Limiter;
@@ -57,6 +75,7 @@ export class Mixer {
     live: new Meter(),
     event: new Meter(),
     emergency: new Meter(),
+    studio: new Meter(),
     master: new Meter(),
   };
   private scratch = new Float32Array(0);
@@ -68,6 +87,14 @@ export class Mixer {
   /** Last block's master RMS (dBFS) before limiting — used by the silence detector. */
   lastRmsDb = -120;
   framesMixed = 0;
+  /**
+   * Studio monitor without the mic: when set, render() also produces `lastDry` — the
+   * mix before the live bus (master fader applied, no limiter). Only computed while
+   * someone listens.
+   */
+  wantDry = false;
+  lastDry: Buffer | null = null;
+  private dryScratch = new Float32Array(0);
 
   constructor(
     readonly live: LiveBus,
@@ -88,7 +115,16 @@ export class Mixer {
     return this.duck.current;
   }
 
-  private mixBus(bus: Exclude<BusName, "live">, frames: number, gain: number): void {
+  private mixStudio(frames: number, gain: number): void {
+    if (this.studio.length === 0 || this.busMute.studio) return;
+    const b = this.busScratch;
+    b.fill(0, 0, frames * 2);
+    for (const src of this.studio) src.mixInto(b, frames);
+    this.meters.studio.add(b, frames * 2, gain);
+    for (let i = 0; i < frames * 2; i += 1) this.scratch[i] = this.scratch[i]! + b[i]! * gain;
+  }
+
+  private mixBus(bus: Exclude<BusName, "live" | "studio">, frames: number, gain: number): void {
     const decks = this.decks[bus];
     if (decks.size === 0 || this.busMute[bus]) return;
     const b = this.busScratch;
@@ -110,8 +146,16 @@ export class Mixer {
     const duck = this.duck.step(duckTarget, frames);
     this.mixBus("automation", frames, this.busGain.automation * duck);
     this.mixBus("event", frames, this.busGain.event * duck);
+    this.mixStudio(frames, this.busGain.studio * duck);
     this.mixBus("voiceover", frames, this.busGain.voiceover);
     this.mixBus("emergency", frames, this.busGain.emergency);
+    if (this.wantDry) {
+      if (this.dryScratch.length < n) this.dryScratch = new Float32Array(n);
+      this.dryScratch.set(this.scratch.subarray(0, n));
+      if (this.fader !== 1)
+        for (let i = 0; i < n; i += 1) this.dryScratch[i] = this.dryScratch[i]! * this.fader;
+      this.lastDry = floatToInt16(this.dryScratch, n);
+    } else this.lastDry = null;
     if (!this.busMute.live && this.live.active) {
       const b = this.busScratch;
       b.fill(0, 0, n);
@@ -144,6 +188,15 @@ export class Mixer {
       masterRms: round(master.rms),
       buses,
       duckGain: round(gainToDb(this.duck.current)),
+      players: this.studio.map((src) => {
+        const m = src.readMeter();
+        return {
+          id: src.id,
+          peak: round(m.peak),
+          rms: round(m.rms),
+          position: Math.round(m.position * 100) / 100,
+        };
+      }),
     };
   }
 

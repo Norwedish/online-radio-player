@@ -7,6 +7,7 @@
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { LiveBus } from "../audio/live-bus.js";
+import { MonitorHub } from "./monitor.js";
 
 export class LiveServer {
   private http: Server | null = null;
@@ -16,10 +17,15 @@ export class LiveServer {
   private stats: NodeJS.Timeout | null = null;
   connected = false;
 
+  /** Listeners of the pre-processing studio monitor. */
+  readonly monitor: MonitorHub;
+
   constructor(
     private readonly bus: LiveBus,
     private readonly log: (m: string) => void,
-  ) {}
+  ) {
+    this.monitor = new MonitorHub(log);
+  }
 
   listen(port: number, host = "127.0.0.1"): Promise<void> {
     this.http = createServer((_req, res) => {
@@ -30,6 +36,17 @@ export class LiveServer {
     this.http.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       const token = url.searchParams.get("token");
+      // Studio monitor (pre-Stereo Tool feed to the browser): many listeners, one-time tokens.
+      if (url.pathname.endsWith("/live/monitor")) {
+        const opts = this.monitor.take(token);
+        if (!opts) {
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        this.wss!.handleUpgrade(req, socket, head, (ws) => this.monitor.attach(ws, opts));
+        return;
+      }
       if (!url.pathname.endsWith("/live") || !this.token || token !== this.token) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
@@ -38,6 +55,12 @@ export class LiveServer {
       this.wss!.handleUpgrade(req, socket, head, (ws) => this.onSocket(ws));
     });
     return new Promise((resolve) => this.http!.listen(port, host, () => resolve()));
+  }
+
+  /** The bound port (useful after listen(0)). */
+  get port(): number {
+    const a = this.http?.address();
+    return a && typeof a === "object" ? a.port : 0;
   }
 
   /** Arms the uplink for one session. */
@@ -97,6 +120,7 @@ export class LiveServer {
   close(): Promise<void> {
     if (this.stats) clearInterval(this.stats);
     this.disconnect();
+    this.monitor.close();
     this.wss?.close();
     return new Promise((resolve) => (this.http ? this.http.close(() => resolve()) : resolve()));
   }

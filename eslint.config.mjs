@@ -48,4 +48,17 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // AudioWorklet modules (served as same-origin files for the strict CSP).
+    files: ["apps/web/public/worklets/*.js"],
+    languageOptions: {
+      globals: {
+        AudioWorkletProcessor: "readonly",
+        registerProcessor: "readonly",
+        sampleRate: "readonly",
+        currentFrame: "readonly",
+        currentTime: "readonly",
+      },
+    },
+  },
 );

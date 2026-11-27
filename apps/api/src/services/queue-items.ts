@@ -27,6 +27,17 @@ export function mediaQueueItem(m: MediaRow, extra: Partial<QueueItem> = {}): Que
     source: "manual",
     requestId: null,
     artworkUrl: m.artwork_path ? `/api/media/${m.id}/artwork` : null,
+    ...itemMarkers(m, cueIn),
     ...extra,
   };
+}
+
+/** Intro/outro markers relative to cue-in (stored as file time on the media row). */
+export function itemMarkers(
+  m: Pick<MediaRow, "intro_end" | "outro_start">,
+  cueIn: number,
+): { intro: number | null; outro: number | null } {
+  const rel = (v: number | null | undefined) =>
+    v !== null && v !== undefined && v > cueIn ? Math.round((v - cueIn) * 1000) / 1000 : null;
+  return { intro: rel(m.intro_end), outro: rel(m.outro_start) };
 }

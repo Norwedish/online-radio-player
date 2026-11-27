@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   secret,
+  stereotoolKeyFile,
   type CommandType,
   type CommandPayload,
   type QueueItem,
@@ -77,6 +78,7 @@ export class PlayoutWorker {
       silenceThresholdDb: s("audio.silenceThresholdDb", config.audio.silenceThresholdDb),
       silenceSeconds: s("audio.silenceSeconds", config.audio.silenceSeconds),
       emergencyFile: config.audio.emergencyFile,
+      maxCrossfadeSeconds: s("audio.autocue.maxOverlap", 6),
       log: this.log,
       alert: (a) => this.alert(a),
       status: () => ({
@@ -94,8 +96,12 @@ export class PlayoutWorker {
     });
     this.engine.on("worker-event", (type, payload) => this.protocol.broadcast(type, payload));
     this.clock = new AudioClock((frames) => {
+      const monitor = this.liveServer.monitor;
+      this.mixer.wantDry = monitor.wantsDry;
       const pcm = this.mixer.render(frames);
       this.engine.onRendered(this.mixer.lastRmsDb, frames);
+      // Studio monitor taps the program *before* Stereo Tool (no processing, no encoder delay).
+      monitor.feed(pcm, this.mixer.lastDry);
       this.stereotool.writePcm(pcm);
     });
     this.protocol = new ProtocolServer((type, payload) => this.handle(type, payload), {
@@ -149,17 +155,31 @@ export class PlayoutWorker {
     return targets;
   }
 
-  async start(): Promise<void> {
-    this.stereotool = createStereoTool(this.config.stereotool, {
+  private async startStereoTool(): Promise<StereoToolAdapter> {
+    const st = createStereoTool(this.config.stereotool, {
       mock: this.config.stereotoolMock,
       mockScript: join(this.config.rootDir, "scripts/mock-stereotool.mjs"),
       hostScript: join(this.config.rootDir, "apps/playout/bin/stereotool-host.mjs"),
       homeDir: join(this.config.dataDir, "var/stereotool"),
+      keyFile: stereotoolKeyFile(this.config.dataDir),
       log: this.log,
       alert: (a) => this.alert(a),
     });
-    this.stereotool.onOutput((chunk) => this.hub.write(chunk));
-    await this.stereotool.start();
+    st.onOutput((chunk) => this.hub.write(chunk));
+    await st.start();
+    return st;
+  }
+
+  /** New licence key: restart Stereo Tool with it (a short audio hiccup, no service restart). */
+  async reloadStereoTool(): Promise<void> {
+    const old = this.stereotool;
+    this.stereotool = await this.startStereoTool();
+    await old?.stop();
+    this.log("stereotool: reloaded with the current licence key");
+  }
+
+  async start(): Promise<void> {
+    this.stereotool = await this.startStereoTool();
     if (this.opts.outputs !== false) for (const t of this.outputTargets()) this.hub.add(t);
     const endpoint =
       this.opts.endpoint ??
@@ -228,6 +248,7 @@ export class PlayoutWorker {
       this.config.audio.silenceThresholdDb,
     );
     this.engine.silenceSeconds = s("audio.silenceSeconds", this.config.audio.silenceSeconds);
+    this.engine.maxCrossfadeSeconds = s("audio.autocue.maxOverlap", 6);
     this.mixer.duckDb = s("live.duckDb", this.config.scheduler.live.duckDb);
     this.mixer.setDuckTiming(
       s("live.duckAttackMs", this.config.scheduler.live.duckAttackMs),
@@ -380,6 +401,52 @@ export class PlayoutWorker {
       case "settings:reload":
         this.reloadSettings();
         break;
+      case "stereotool:reload":
+        await this.reloadStereoTool();
+        return this.stereotool.status();
+      case "studio:manual":
+        e.setManual((payload as CommandPayload<"studio:manual">).enabled);
+        break;
+      case "studio:load": {
+        const p = payload as CommandPayload<"studio:load">;
+        e.studioLoad(p.player, (p.item as QueueItem | undefined) ?? null, p.queueUid, p.cuePoint);
+        break;
+      }
+      case "studio:play":
+      case "studio:pause":
+      case "studio:stop":
+      case "studio:eject":
+        e.studioCommand(
+          (payload as CommandPayload<"studio:play">).player,
+          type.slice("studio:".length) as "play" | "pause" | "stop" | "eject",
+        );
+        break;
+      case "studio:seek": {
+        const p = payload as CommandPayload<"studio:seek">;
+        e.studio.player(p.player).seek(p.position);
+        break;
+      }
+      case "studio:fade": {
+        const p = payload as CommandPayload<"studio:fade">;
+        e.studio.player(p.player).fade(p.seconds);
+        break;
+      }
+      case "studio:set": {
+        const { player, ...opts } = payload as CommandPayload<"studio:set">;
+        e.studio.player(player).set(opts);
+        break;
+      }
+      case "studio:cart":
+        e.studio.carts.fire((payload as CommandPayload<"studio:cart">).item as QueueItem);
+        break;
+      case "studio:cart_stop":
+        e.studio.carts.stop((payload as CommandPayload<"studio:cart_stop">).uid);
+        break;
+      case "monitor:allow": {
+        const p = payload as CommandPayload<"monitor:allow">;
+        this.liveServer.monitor.allow(p.token, { mic: p.mic, rate: p.rate });
+        return { listeners: this.liveServer.monitor.listeners };
+      }
     }
     return e.getState();
   }

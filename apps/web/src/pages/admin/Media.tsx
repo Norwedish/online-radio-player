@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FolderSearch, Search, Upload } from "lucide-react";
+import { Crosshair, FolderSearch, Search, Sparkles, Upload } from "lucide-react";
 import { useAuth } from "../../hooks/auth";
 import { useLive } from "../../hooks/live";
 import { errorMessage, get, patch, post, upload } from "../../lib/api";
@@ -33,6 +33,7 @@ export default function MediaLibrary() {
   const qc = useQueryClient();
   const mediaTick = useLive((s) => s.mediaTick);
   const [tab, setTab] = useState<Tab>("library");
+  const [busy, setBusy] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [status, setStatus] = useState("");
@@ -147,6 +148,30 @@ export default function MediaLibrary() {
                 }}
               >
                 <FolderSearch className="size-4" /> Scan folders
+              </Button>
+              <Button
+                disabled={busy === "autocue"}
+                title="Re-detect cue-in, cue-out and crossfades for every analysed track (keeps manual points)"
+                onClick={async () => {
+                  setBusy("autocue");
+                  try {
+                    const r = await post<{ updated: number; skipped: number }>(
+                      "/api/media/autocue/recompute",
+                      {},
+                    );
+                    toast.success(
+                      `Cue points updated: ${r.updated}${r.skipped ? ` · ${r.skipped} unchanged` : ""}`,
+                    );
+                    refresh();
+                  } catch (e) {
+                    toast.error(errorMessage(e));
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                <Sparkles className="size-4" />{" "}
+                {busy === "autocue" ? "Detecting…" : "Re-detect cues"}
               </Button>
               <Button tone="primary" onClick={() => fileRef.current?.click()}>
                 <Upload className="size-4" /> Upload
@@ -496,7 +521,55 @@ function MediaEditor({
   const [form, setForm] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const artRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLAudioElement>(null);
   const m = detail.data?.media;
+  /** Automatic cue points come from loudness analysis; manual ones stay pinned. */
+  const isAuto = m ? m.cue_source !== "manual" : true;
+  const detected = (() => {
+    try {
+      return m?.autocue_json
+        ? (JSON.parse(m.autocue_json) as {
+            cueIn: number;
+            cueOut: number;
+            fadeIn: number;
+            fadeOut: number;
+          })
+        : null;
+    } catch {
+      return null;
+    }
+  })();
+  /** Switches between detected and pinned cue points (auto re-runs from the stored envelope). */
+  const switchSource = async (auto: boolean) => {
+    if (!m) return;
+    setBusy("source");
+    try {
+      if (auto) {
+        try {
+          await patch(`/api/media/${m.id}`, { cue_source: "auto" });
+        } catch {
+          // No envelope yet: run the analysis and adopt its result.
+          await post(`/api/media/${m.id}/analyze`, { adopt: true });
+        }
+        toast.success("Automatic cue points applied");
+      } else {
+        await patch(`/api/media/${m.id}`, { cue_source: "manual" });
+        toast.success("Cue points pinned as manual");
+      }
+      await detail.refetch();
+      onChanged();
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  /** Sets a marker field from where the preview player is now (mark intros by ear). */
+  const markHere = (k: string) => {
+    const t = previewRef.current?.currentTime;
+    if (t === undefined) return;
+    setForm((f) => ({ ...f, [k]: (Math.round(t * 10) / 10).toString() }));
+  };
   useEffect(() => {
     if (!m) return;
     setForm({
@@ -507,6 +580,8 @@ function MediaEditor({
       year: m.year?.toString() ?? "",
       cue_in: m.cue_in?.toString() ?? "",
       cue_out: m.cue_out?.toString() ?? "",
+      intro_end: m.intro_end?.toString() ?? "",
+      outro_start: m.outro_start?.toString() ?? "",
       fade_in: m.fade_in?.toString() ?? "",
       fade_out: m.fade_out?.toString() ?? "",
       gain_db: m.gain_db?.toString() ?? "",
@@ -562,6 +637,7 @@ function MediaEditor({
               </>
             ) : null}
             <audio
+              ref={previewRef}
               controls
               preload="none"
               src={`/api/media/${m.id}/preview`}
@@ -590,29 +666,72 @@ function MediaEditor({
                 )}
               </Field>
             </div>
-            <div className="grid gap-3 sm:grid-cols-5">
-              <Field label="Cue in (s)">
-                {(fid) => (
-                  <Input
-                    id={fid}
-                    inputMode="decimal"
-                    value={form.cue_in ?? ""}
-                    onChange={set("cue_in")}
-                    disabled={!manage}
-                  />
-                )}
-              </Field>
-              <Field label="Cue out (s)">
-                {(fid) => (
-                  <Input
-                    id={fid}
-                    inputMode="decimal"
-                    value={form.cue_out ?? ""}
-                    onChange={set("cue_out")}
-                    disabled={!manage}
-                  />
-                )}
-              </Field>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Badge tone={isAuto ? "good" : "neutral"}>
+                {isAuto ? "Automatic cue points" : "Manual cue points"}
+              </Badge>
+              {manage ? (
+                <Button
+                  size="sm"
+                  tone="ghost"
+                  busy={busy === "source"}
+                  onClick={() => switchSource(!isAuto)}
+                >
+                  <Sparkles className="size-3.5" />
+                  {isAuto ? "Set cue points manually" : "Detect again automatically"}
+                </Button>
+              ) : null}
+            </div>
+            <p className="-mt-2 text-xs text-faint">
+              Automatic points follow the volume: playback starts when the track gets loud and the
+              next song begins where the outro drops away, so songs crossfade instead of stopping.
+              Set them manually to keep your own points.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-4">
+              {(
+                [
+                  ["cue_in", "Cue in (s)"],
+                  ["intro_end", "Intro end (s)"],
+                  ["outro_start", "Outro start (s)"],
+                  ["cue_out", "Cue out (s)"],
+                ] as const
+              ).map(([k, label]) => {
+                const locked = isAuto && (k === "cue_in" || k === "cue_out");
+                return (
+                  <Field key={k} label={label}>
+                    {(fid) => (
+                      <div className="flex gap-1">
+                        <Input
+                          id={fid}
+                          inputMode="decimal"
+                          value={form[k] ?? ""}
+                          onChange={set(k)}
+                          disabled={!manage || locked}
+                          className="min-w-0 flex-1"
+                        />
+                        {manage && !locked ? (
+                          <Button
+                            size="sm"
+                            tone="ghost"
+                            className="h-9 px-2"
+                            onClick={() => markHere(k)}
+                            title="Set from the preview player's position"
+                            aria-label={`Set ${label} from preview position`}
+                          >
+                            <Crosshair className="size-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    )}
+                  </Field>
+                );
+              })}
+            </div>
+            <p className="-mt-2 text-xs text-faint">
+              Intro and outro drive the studio player timers. Play the preview and press the
+              crosshair to mark a point.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Fade in">
                 {(fid) => (
                   <Input
@@ -620,7 +739,7 @@ function MediaEditor({
                     inputMode="decimal"
                     value={form.fade_in ?? ""}
                     onChange={set("fade_in")}
-                    disabled={!manage}
+                    disabled={!manage || isAuto}
                   />
                 )}
               </Field>
@@ -631,7 +750,7 @@ function MediaEditor({
                     inputMode="decimal"
                     value={form.fade_out ?? ""}
                     onChange={set("fade_out")}
-                    disabled={!manage}
+                    disabled={!manage || isAuto}
                   />
                 )}
               </Field>
@@ -647,6 +766,13 @@ function MediaEditor({
                 )}
               </Field>
             </div>
+            {detected ? (
+              <p className="-mt-2 text-xs text-faint tnum">
+                Detected: cue in {detected.cueIn.toFixed(1)} s · cue out{" "}
+                {detected.cueOut.toFixed(1)} s · fade in {detected.fadeIn.toFixed(1)} s · crossfade{" "}
+                {detected.fadeOut.toFixed(1)} s
+              </p>
+            ) : null}
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
               <dt className="text-muted">Length</dt>
               <dd className="font-display tnum">{mmss(m.duration)}</dd>
@@ -686,6 +812,8 @@ function MediaEditor({
                           year: num(form.year ?? ""),
                           cue_in: num(form.cue_in ?? ""),
                           cue_out: num(form.cue_out ?? ""),
+                          intro_end: num(form.intro_end ?? ""),
+                          outro_start: num(form.outro_start ?? ""),
                           fade_in: num(form.fade_in ?? ""),
                           fade_out: num(form.fade_out ?? ""),
                           gain_db: num(form.gain_db ?? ""),

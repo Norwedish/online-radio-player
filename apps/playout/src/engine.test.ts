@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gainToDb } from "@radio/core";
+import { encodeEnvelope, gainToDb } from "@radio/core";
+import type { MediaRow } from "@radio/db";
 import { LiveBus } from "./audio/live-bus.js";
 import { Mixer } from "./audio/mixer.js";
 import { PlayoutEngine } from "./engine.js";
@@ -29,7 +30,8 @@ beforeAll(() => {
     files[name] = tone(dir, name, secs, freq, amp);
   }
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+// Retries: on Windows an FFmpeg process that is still exiting can briefly lock the files.
+afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
 
 function setup(opts: { startOffset: number; tolerance?: number; silenceSeconds?: number }) {
   const source = new FakePlanSource("UTC");
@@ -51,9 +53,15 @@ function setup(opts: { startOffset: number; tolerance?: number; silenceSeconds?:
     alert: (a) => alerts.push(a.type),
   });
   const started: string[] = [];
-  engine.on("worker-event", (type: string, payload: { item?: { title: string } }) => {
-    if (type === "track_started") started.push(payload.item!.title);
-  });
+  const ended: { title: string; reason: string }[] = [];
+  engine.on(
+    "worker-event",
+    (type: string, payload: { item?: { title: string }; reason?: string }) => {
+      if (type === "track_started") started.push(payload.item!.title);
+      if (type === "track_ended")
+        ended.push({ title: payload.item!.title, reason: payload.reason ?? "" });
+    },
+  );
   /** Runs the clock for `seconds` of audio, ticking the scheduler every 100 ms. */
   const run = async (seconds: number) => {
     const blocks = Math.round(seconds * 100);
@@ -74,7 +82,7 @@ function setup(opts: { startOffset: number; tolerance?: number; silenceSeconds?:
     const d = new Date(ms);
     return `${d.toISOString().slice(0, 10)}:${d.getUTCHours()}`;
   };
-  return { source, mixer, engine, now, run, started, alerts, t0, hourKey };
+  return { source, mixer, engine, now, run, started, ended, alerts, t0, hourKey };
 }
 
 const news = (title = "News 11") =>
@@ -306,4 +314,193 @@ describe("Emergency (M4.6)", () => {
     expect(t.engine.current!.deck.position).toBeLessThan(pos + 1.3);
     t.engine.shutdown();
   });
+});
+
+describe("news refresh", () => {
+  it("plays the current news file length, not the one from when the hour was planned", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [item(files.s6!, 6, { title: "A", plannedStart: t.t0 })]);
+    const planned = news();
+    t.source.hours.set(t.hourKey(B), [planned]);
+    // Meanwhile the bulletin was replaced by a 6 s version with new cue points.
+    t.source.media = ((id: number) =>
+      id === planned.mediaId
+        ? ({
+            id,
+            path: files.s6!,
+            title: "News 11",
+            artist: null,
+            duration: 6,
+            cue_in: 0.2,
+            cue_out: 5.9,
+            fade_in: 0,
+            fade_out: 0,
+            gain_db: -2,
+            intro_end: null,
+            outro_start: null,
+            artwork_path: null,
+            status: "ok",
+          } as unknown as MediaRow)
+        : undefined) as typeof t.source.media;
+    t.engine.start();
+    await t.run(7);
+    expect(t.started).toEqual(["A", "News 11"]);
+    expect(t.engine.current!.item).toMatchObject({
+      path: files.s6,
+      cueIn: 0.2,
+      duration: 5.7,
+      gainDb: -2,
+    });
+    t.engine.shutdown();
+  }, 30_000);
+});
+
+describe("crossfades (autocue)", () => {
+  it("starts the next track at the detected fade point and overlaps both", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [
+      item(files.s6!, 6, { title: "A", plannedStart: t.t0, fadeOut: 2 }),
+      item(files.s4!, 4, { title: "B", plannedStart: t.t0 + 6000 }),
+    ]);
+    t.engine.start();
+    await t.run(4.15);
+    // A is 6 s long with a 2 s fade-out → B starts at 4 s, while A is still fading.
+    expect(t.started).toEqual(["A", "B"]);
+    expect(t.engine.current!.item.title).toBe("B");
+    const startedAt = t.engine.current!.startedAt - t.t0;
+    expect(startedAt).toBeGreaterThan(3_700);
+    expect(startedAt).toBeLessThan(4_300);
+    expect(t.mixer.decks.automation.size).toBe(2);
+    expect(t.ended).toEqual([]);
+    // The old track finishes its built-in fade and leaves the mixer on its own.
+    await t.run(2.1);
+    expect(t.mixer.decks.automation.size).toBe(1);
+    expect(t.ended.map((e) => e.title)).toContain("A");
+    expect(t.engine.current!.item.title).toBe("B");
+    t.engine.shutdown();
+  }, 30_000);
+
+  /** A library row with a loudness envelope: `level(t)` LUFS every 100 ms. */
+  const withEnvelope = (
+    t: ReturnType<typeof setup>,
+    mediaId: number,
+    seconds: number,
+    level: (s: number) => number,
+  ) => {
+    const frames = Array.from({ length: seconds * 10 }, (_, i) => ({
+      t: (i + 1) / 10,
+      m: level((i + 1) / 10),
+    }));
+    t.source.mediaRows.set(mediaId, {
+      id: mediaId,
+      loudness_lufs: -12,
+      loudness_envelope: encodeEnvelope(frames),
+    } as MediaRow);
+  };
+
+  it("loud intro: the old track fades out within 1 s and the next starts at full level", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [
+      item(files.s6!, 6, { title: "A", mediaId: 1, plannedStart: t.t0, fadeOut: 2 }),
+      item(files.s4!, 4, { title: "B", mediaId: 2, plannedStart: t.t0 + 6000, fadeIn: 1 }),
+    ]);
+    // A's tail (from 4 s) is 15 LU down; B opens at full loudness.
+    withEnvelope(t, 1, 6, (s) => (s <= 4 ? -12 : -27));
+    withEnvelope(t, 2, 4, () => -12);
+    t.engine.start();
+    await t.run(4.15);
+    expect(t.started).toEqual(["A", "B"]);
+    expect(t.mixer.decks.automation.size).toBe(2);
+    // B's own 1 s fade-in is skipped: it is at full level straight away.
+    const b = t.engine.current!.deck;
+    await t.run(0.2);
+    expect(b.position).toBeLessThan(0.5);
+    expect(t.mixer.lastRmsDb).toBeGreaterThan(-15);
+    // A is gone after ~1 s, well before its natural end at 6 s.
+    await t.run(1);
+    expect(t.mixer.decks.automation.size).toBe(1);
+    expect(t.ended.map((e) => e.title)).toContain("A");
+    t.engine.shutdown();
+  }, 30_000);
+
+  it("quiet intro: the old track plays out its tail under it", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [
+      item(files.s6!, 6, { title: "A", mediaId: 1, plannedStart: t.t0, fadeOut: 2 }),
+      item(files.s4!, 4, { title: "B", mediaId: 2, plannedStart: t.t0 + 6000 }),
+    ]);
+    withEnvelope(t, 1, 6, (s) => (s <= 4 ? -12 : -27));
+    withEnvelope(t, 2, 4, (s) => (s < 3 ? -40 : -12));
+    t.engine.start();
+    await t.run(5.3);
+    // 1.3 s into the overlap A still plays (it holds ~1.5 s, then fades 0.5 s).
+    expect(t.started).toEqual(["A", "B"]);
+    expect(t.mixer.decks.automation.size).toBe(2);
+    await t.run(1);
+    expect(t.mixer.decks.automation.size).toBe(1);
+    expect(t.ended.map((e) => e.title)).toContain("A");
+    t.engine.shutdown();
+  }, 30_000);
+
+  it("keeps fallback music queued (and preloaded) when the hour has no plan", async () => {
+    const t = setup({ startOffset: 60 });
+    t.source.fillers = [item(files.s2!, 2, { title: "F1" }), item(files.s2!, 2, { title: "F2" })];
+    t.engine.start();
+    for (let i = 0; i < 4; i += 1) {
+      await t.run(1.5);
+      expect(t.engine.queue.length).toBeGreaterThan(0);
+    }
+    expect(t.started.length).toBeGreaterThanOrEqual(3);
+    t.engine.shutdown();
+  }, 30_000);
+
+  it("does not crossfade into a new song when the news is due within the tolerance", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [
+      item(files.s6!, 6, { title: "A", plannedStart: t.t0, fadeOut: 2 }),
+      item(files.s4!, 4, { title: "B", plannedStart: t.t0 + 6000 }),
+    ]);
+    t.source.hours.set(t.hourKey(B), [news()]);
+    t.engine.start();
+    // A ends 4 s before the news (tolerance 5 s): rule 4 starts the news early, B is skipped.
+    await t.run(7);
+    expect(t.started).toEqual(["A", "News 11"]);
+    t.engine.shutdown();
+  }, 30_000);
+
+  it("starts the first song under the fading tail of the news", async () => {
+    const t = setup({ startOffset: 0.5 });
+    t.source.hours.set(t.hourKey(B), [
+      item(files.news!, 3, {
+        kind: "news",
+        title: "News 11",
+        locked: true,
+        plannedStart: B,
+        fadeOut: 1,
+      }),
+      item(files.s4!, 4, { title: "C", plannedStart: B + 3000 }),
+    ]);
+    t.engine.start();
+    await t.run(0.2);
+    expect(t.started).toEqual(["News 11"]);
+    const newsStart = t.engine.current!.startedAt - t.t0;
+    // C comes in 1 s before the news ends, while the news is still fading.
+    await t.run((newsStart + 2150) / 1000 - 0.2);
+    expect(t.started).toEqual(["News 11", "C"]);
+    expect(t.mixer.decks.automation.size).toBe(2);
+    t.engine.shutdown();
+  }, 30_000);
+
+  it("does not crossfade into a locked news block", async () => {
+    const t = setup({ startOffset: 10 });
+    t.source.hours.set(t.hourKey(B - 1), [
+      item(files.s6!, 6, { title: "A", plannedStart: t.t0, fadeOut: 2 }),
+    ]);
+    t.source.hours.set(t.hourKey(B), [news()]);
+    t.engine.start();
+    await t.run(4.15);
+    expect(t.started).toEqual(["A"]);
+    expect(t.mixer.decks.automation.size).toBe(1);
+    t.engine.shutdown();
+  }, 30_000);
 });

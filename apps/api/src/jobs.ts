@@ -7,6 +7,8 @@ import { statfsSync } from "node:fs";
 import { runRetention } from "@radio/db";
 import type { AppContext } from "./context.js";
 import { analyzePending } from "./services/media/loudness.js";
+import { scanLibraryOnce } from "./services/media/scanner.js";
+import { NewsRefresher } from "./services/media/news-refresh.js";
 import { runBackup } from "./routes/operations.js";
 
 export function startJobs(ctx: AppContext, options: { backups?: boolean } = {}): () => void {
@@ -29,6 +31,39 @@ export function startJobs(ctx: AppContext, options: { backups?: boolean } = {}):
     setInterval(
       safe("live-no-show", () => ctx.live.checkNoShow()),
       30_000,
+    ),
+  );
+  // Periodic library scan (media.scanIntervalSeconds): picks up files added to a network
+  // share by other computers, where file-change notifications never arrive. Unchanged files
+  // are skipped by size + modification time, so a rescan is cheap.
+  timers.push(
+    setInterval(
+      safe("media-scan", async () => {
+        const r = await scanLibraryOnce(ctx.repos, ctx.config);
+        if (r && (r.created || r.updated || r.missing)) {
+          ctx.log(`scan: ${r.created} new, ${r.updated} updated, ${r.missing} missing`);
+          ctx.bus.publish("media", "media:scan-done", { ...r, errors: r.errors.slice(0, 20) });
+        }
+      }),
+      ctx.config.media.scanIntervalSeconds * 1000,
+    ),
+  );
+  // News bulletins change under the same name many times a day: check them every 10 s and
+  // analyse a new version as soon as it is completely written.
+  const news = new NewsRefresher(
+    ctx.repos,
+    ctx.config,
+    () => {
+      const s = ctx.generator.settings();
+      return [s.news_path_hour, s.news_path_half];
+    },
+    () => ctx.repos.settings.get("audio.targetLufs", ctx.config.audio.targetLufs),
+    ctx.log,
+  );
+  timers.push(
+    setInterval(
+      safe("news-refresh", () => news.check()),
+      10_000,
     ),
   );
   let analyzing = false;

@@ -115,6 +115,12 @@ export function NowPlayingCard({
   );
 }
 
+/** Optional quick filters above the search: a playlist (e.g. Nieuws) or everything. */
+export interface PickerSource {
+  label: string;
+  playlistId?: number;
+}
+
 /** Library search returning one media row (queue insert, play-now, voice-over, playlists). */
 export function MediaPicker({
   open,
@@ -122,24 +128,29 @@ export function MediaPicker({
   onPick,
   title = "Find a track",
   playlistId,
+  sources,
 }: {
   open: boolean;
   onClose: () => void;
   onPick: (m: Media) => void;
   title?: string;
   playlistId?: number;
+  sources?: PickerSource[];
 }) {
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [sourceIndex, setSourceIndex] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setDebounced(q), 250);
     return () => clearTimeout(t);
   }, [q]);
+  const source = sources?.[sourceIndex] ?? sources?.[0];
+  const filterPlaylistId = source?.playlistId ?? playlistId;
   const results = useQuery({
-    queryKey: ["media-pick", debounced, playlistId],
+    queryKey: ["media-pick", debounced, filterPlaylistId],
     queryFn: () =>
       get<{ items: Media[] }>(
-        `/api/media?status=ok&limit=40${debounced ? `&q=${encodeURIComponent(debounced)}` : ""}${playlistId ? `&playlistId=${playlistId}` : ""}`,
+        `/api/media?status=ok&limit=40${debounced ? `&q=${encodeURIComponent(debounced)}` : ""}${filterPlaylistId ? `&playlistId=${filterPlaylistId}` : ""}`,
       ),
     enabled: open,
   });
@@ -159,6 +170,21 @@ export function MediaPicker({
           aria-label="Search the library"
         />
       </div>
+      {sources && sources.length > 1 ? (
+        <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Source">
+          {sources.map((s, i) => (
+            <Button
+              key={s.label}
+              size="sm"
+              tone={i === sourceIndex ? "default" : "ghost"}
+              aria-pressed={i === sourceIndex}
+              onClick={() => setSourceIndex(i)}
+            >
+              {s.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {results.isLoading ? <Spinner /> : null}
       <ul className="divide-y divide-line">
         {results.data?.items.map((m) => (

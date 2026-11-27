@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import WebSocket from "ws";
 import { hashPassword, sha256 } from "@radio/db";
@@ -41,6 +41,8 @@ const fakeState = (): PlayoutState => ({
     source: "automation",
     requestId: null,
     artworkUrl: null,
+    intro: null,
+    outro: null,
     startedAt: Date.now(),
     position: 10,
   },
@@ -87,6 +89,7 @@ const fakeState = (): PlayoutState => ({
   currentPlan: { planId: null, date: null, hour: null },
   uptimeSeconds: 5,
   sampleClock: 0,
+  studio: { manual: false, players: [], carts: [] },
 });
 
 interface Session {
@@ -518,6 +521,155 @@ describe("playout control + audit (M6.1/M6.3)", () => {
   });
 });
 
+describe("studio players + manual mode", () => {
+  it("loads media with intro/outro markers relative to cue-in and drives the players", async () => {
+    const m = ctx.repos.media.upsert({
+      path: "/lib/studio.mp3",
+      title: "Studio track",
+      artist: "Band",
+      duration: 200,
+      cue_in: 2,
+      intro_end: 17,
+      outro_start: 182,
+      status: "ok",
+    }).row;
+    commands.length = 0;
+    const load = await as(dj, "POST", "/api/studio/players/A/load", {
+      mediaId: m.id,
+      cuePoint: 4,
+    });
+    expect(load.statusCode, load.body).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:load",
+      payload: {
+        player: "A",
+        cuePoint: 4,
+        item: { mediaId: m.id, cueIn: 2, duration: 198, intro: 15, outro: 180 },
+      },
+    });
+    for (const [url, type] of [
+      ["/api/studio/players/A/play", "studio:play"],
+      ["/api/studio/players/A/pause", "studio:pause"],
+      ["/api/studio/players/A/stop", "studio:stop"],
+      ["/api/studio/players/B/eject", "studio:eject"],
+      ["/api/studio/manual", "studio:manual"],
+    ] as const) {
+      const res = await as(
+        dj,
+        "POST",
+        url,
+        type === "studio:manual" ? { enabled: false } : undefined,
+      );
+      expect(res.statusCode, `${url} ${res.body}`).toBe(200);
+      expect(commands.at(-1)!.type).toBe(type);
+    }
+    expect((await as(dj, "POST", "/api/studio/players/B/fade", { seconds: 2 })).statusCode).toBe(
+      200,
+    );
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:fade",
+      payload: { player: "B", seconds: 2 },
+    });
+    expect(
+      (await as(dj, "PATCH", "/api/studio/players/A", { gainDb: -6, loop: true })).statusCode,
+    ).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:set",
+      payload: { player: "A", gainDb: -6, loop: true },
+    });
+    expect((await as(dj, "POST", "/api/studio/carts", { mediaId: m.id })).statusCode).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:cart",
+      payload: { item: { mediaId: m.id, kind: "jingle" } },
+    });
+    const fromQueue = await as(dj, "POST", "/api/studio/players/B/load", { uid: "q1" });
+    expect(fromQueue.statusCode).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:load",
+      payload: { player: "B", queueUid: "q1" },
+    });
+    const audits = ctx.repos.audit.list({ action: "playout.studio" }).items;
+    expect(audits.some((a) => a.action === "playout.studio:play" && a.username === "dj1")).toBe(
+      true,
+    );
+  });
+
+  it("keeps a news bulletin a news item, so its cue points are re-read before air", async () => {
+    const news = ctx.repos.playlists.create({ name: "Nieuws test", role: "news" });
+    const m = ctx.repos.media.upsert({
+      path: "/lib/nieuws-test.mp3",
+      title: "Nieuwsbulletin",
+      artist: "Nieuwsagent",
+      duration: 120,
+      status: "ok",
+    }).row;
+    ctx.repos.playlists.replaceItems(news.id, [{ mediaId: m.id }]);
+    commands.length = 0;
+    const load = await as(dj, "POST", "/api/studio/players/A/load", { mediaId: m.id });
+    expect(load.statusCode, load.body).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "studio:load",
+      payload: { item: { mediaId: m.id, kind: "news" } },
+    });
+    const insert = await as(operator, "POST", "/api/playout/queue/insert", { mediaId: m.id });
+    expect(insert.statusCode, insert.body).toBe(200);
+    expect(commands.at(-1)).toMatchObject({
+      type: "queue:insert",
+      payload: { item: { mediaId: m.id, kind: "news" } },
+    });
+  });
+
+  it("stores the Stereo Tool licence key 0600, reloads, never returns it", async () => {
+    commands.length = 0;
+    const file = join(ctx.config.dataDir, "var/stereotool/license.key");
+    expect(
+      (await as(dj, "PUT", "/api/settings/stereotool/license", { key: "x".repeat(20) })).statusCode,
+    ).toBe(403);
+    const res = await as(admin, "PUT", "/api/settings/stereotool/license", {
+      key: " <ABC-KEY-123> ",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(readFileSync(file, "utf8")).toBe("<ABC-KEY-123>\n");
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(commands.at(-1)?.type).toBe("stereotool:reload");
+    const info = await as(admin, "GET", "/api/settings/stereotool");
+    expect(info.json().config.licenseKey).toBe("console");
+    expect(info.body).not.toContain("ABC-KEY");
+    expect(
+      (await as(admin, "PUT", "/api/settings/stereotool/license", { key: "a\nb-long-key" }))
+        .statusCode,
+    ).toBe(400);
+    expect((await as(admin, "DELETE", "/api/settings/stereotool/license")).statusCode).toBe(200);
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("issues a one-time studio-monitor token to signed-in users only", async () => {
+    commands.length = 0;
+    const res = await as(dj, "POST", "/api/studio/monitor", { mic: false, rate: 24000 });
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json() as { wsPath: string; rate: number; mic: boolean };
+    expect(body).toMatchObject({ rate: 24000, mic: false });
+    const token = new URL(body.wsPath, "http://x").searchParams.get("token");
+    expect(body.wsPath.startsWith("/ws/live/monitor?token=")).toBe(true);
+    expect(commands.at(-1)).toMatchObject({
+      type: "monitor:allow",
+      payload: { token, mic: false, rate: 24000 },
+    });
+    expect(
+      (await app.inject({ method: "POST", url: "/api/studio/monitor", payload: {} })).statusCode,
+    ).toBe(401);
+    expect((await as(dj, "POST", "/api/studio/monitor", { rate: 44100 })).statusCode).toBe(400);
+  });
+
+  it("validates player ids and payloads", async () => {
+    expect((await as(dj, "POST", "/api/studio/players/C/play")).statusCode).toBe(400);
+    expect(
+      (await as(dj, "POST", "/api/studio/players/A/load", { mediaId: 1, uid: "x" })).statusCode,
+    ).toBe(400);
+    expect((await as(dj, "PATCH", "/api/studio/players/A", { gainDb: 40 })).statusCode).toBe(400);
+  });
+});
+
 describe("requests (M6.4/M11.3)", () => {
   it("moderates, filters profanity, enforces cooldown, blacklist and inserts approved requests", async () => {
     const m = ctx.repos.media.upsert({
@@ -649,6 +801,20 @@ describe("settings (M1.5)", () => {
     expect(
       (await as(admin, "PATCH", "/api/settings", { settings: { "nope.key": 1 } })).statusCode,
     ).toBe(400);
+  });
+
+  it("a new loudness target re-gains the analysed library", async () => {
+    const { row } = ctx.repos.media.upsert({
+      path: "/tmp/gain-test.mp3",
+      status: "ok",
+      loudness_lufs: -20,
+      gain_db: 4,
+    });
+    const res = await as(admin, "PATCH", "/api/settings", {
+      settings: { "audio.targetLufs": -12 },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(ctx.repos.media.get(row.id)!.gain_db).toBe(8);
   });
 });
 

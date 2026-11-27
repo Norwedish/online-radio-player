@@ -3,17 +3,19 @@
  * MP3/Opus/AAC and an HLS fallback, now playing, next up, recently played and
  * the request form with live status.
  */
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import {
+  isActive,
+  loadStreams,
+  setMount,
+  setMuted,
+  setVolume,
+  togglePlay,
+  usePlayer,
+} from "../../hooks/player";
 import { api, errorMessage, get } from "../../lib/api";
 import { clock } from "../../lib/format";
 
@@ -49,8 +51,6 @@ interface NowPlayingResponse {
     hls: string | null;
   };
 }
-
-type PlayerState = "idle" | "connecting" | "playing" | "buffering" | "error";
 
 function readRequests(): number[] {
   try {
@@ -111,31 +111,15 @@ export default function Listen() {
         items: { title: string; artist: string; startedAt: string; artworkUrl: string | null }[];
       }>("/api/public/history?limit=8"),
   });
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const hlsRef = useRef<{ destroy(): void } | null>(null);
-  const [player, setPlayer] = useState<PlayerState>("idle");
-  const [mount, setMount] = useState<string>("");
-  const [volume, setVolume] = useState(0.8);
-  const [muted, setMuted] = useState(false);
+  // Shared app-wide player (hooks/player.ts): keeps playing across page changes.
+  const player = usePlayer((s) => s.status);
+  const mount = usePlayer((s) => s.mount);
+  const volume = usePlayer((s) => s.volume);
+  const muted = usePlayer((s) => s.muted);
 
   useEffect(() => {
-    if (d && !mount) {
-      const saveData = (navigator as { connection?: { saveData?: boolean } }).connection?.saveData;
-      const mounts = d.streams.mounts;
-      setMount(
-        (saveData ? mounts.find((m) => m.mount.includes("mobile")) : undefined)?.mount ??
-          mounts.find((m) => m.primary)?.mount ??
-          mounts[0]?.mount ??
-          "",
-      );
-    }
-  }, [d, mount]);
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-      audioRef.current.muted = muted;
-    }
-  }, [volume, muted]);
+    void loadStreams();
+  }, []);
   useEffect(() => {
     if (d?.station.name)
       document.title = d.nowPlaying
@@ -143,57 +127,10 @@ export default function Listen() {
         : d.station.name;
   }, [d]);
 
-  const stop = useCallback(() => {
-    hlsRef.current?.destroy();
-    hlsRef.current = null;
-    const a = audioRef.current;
-    if (a) {
-      a.pause();
-      a.removeAttribute("src");
-      a.load();
-    }
-    setPlayer("idle");
-  }, []);
-
-  const playHls = async () => {
-    const a = audioRef.current;
-    if (!a || !d?.streams.hls) return false;
-    if (a.canPlayType("application/vnd.apple.mpegurl")) {
-      a.src = d.streams.hls;
-      await a.play();
-      return true;
-    }
-    const { default: Hls } = await import("hls.js");
-    if (!Hls.isSupported()) return false;
-    const hls = new Hls({ liveSyncDurationCount: 2 });
-    hls.loadSource(d.streams.hls);
-    hls.attachMedia(a);
-    hlsRef.current = hls;
-    await a.play();
-    return true;
-  };
-
-  const play = async () => {
-    const a = audioRef.current;
-    const m = d?.streams.mounts.find((x) => x.mount === mount);
-    if (!a || !m) return;
-    setPlayer("connecting");
-    try {
-      // Cache-bust so a reconnect never replays a stale buffer.
-      a.src = `${m.url}?t=${Date.now()}`;
-      await a.play();
-    } catch {
-      try {
-        if (!(await playHls())) throw new Error("no fallback");
-      } catch {
-        setPlayer("error");
-      }
-    }
-  };
-
   const brand = brandStyle(d?.station.colors);
   const np0 = d?.nowPlaying;
   const playing = player === "playing" || player === "buffering";
+  const busy = player === "connecting" || player === "reconnecting";
 
   return (
     <div style={brand} className="min-h-screen bg-[var(--brand-bg)] text-legend">
@@ -255,11 +192,11 @@ export default function Listen() {
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <button
                   type="button"
-                  onClick={() => (playing || player === "connecting" ? stop() : void play())}
-                  aria-label={playing ? "Stop" : "Play live"}
+                  onClick={togglePlay}
+                  aria-label={isActive(player) ? "Stop" : "Play live"}
                   className="flex size-20 items-center justify-center rounded-full bg-[var(--brand)] text-black transition hover:brightness-110 focus-visible:outline-offset-4"
                 >
-                  {player === "connecting" ? (
+                  {busy ? (
                     <Loader2 className="size-8 animate-spin" />
                   ) : playing ? (
                     <Pause className="size-9" fill="currentColor" />
@@ -273,14 +210,16 @@ export default function Listen() {
                       ? "The stream can't be reached right now. Try another quality or come back in a minute."
                       : player === "buffering"
                         ? "Buffering…"
-                        : playing
-                          ? "Playing live"
-                          : `${d?.listeners ?? 0} listening`}
+                        : player === "reconnecting"
+                          ? "Reconnecting…"
+                          : playing
+                            ? "Playing live"
+                            : `${d?.listeners ?? 0} listening`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setMuted((m) => !m)}
+                      onClick={() => setMuted(!muted)}
                       aria-label={muted ? "Unmute" : "Mute"}
                       className="text-muted hover:text-legend"
                     >
@@ -298,10 +237,7 @@ export default function Listen() {
                     />
                     <select
                       value={mount}
-                      onChange={(e) => {
-                        setMount(e.target.value);
-                        if (playing) setTimeout(() => void play(), 0);
-                      }}
+                      onChange={(e) => setMount(e.target.value)}
                       aria-label="Stream quality"
                       className="h-8 rounded border border-line-strong bg-transparent px-2 text-sm text-muted"
                     >
@@ -314,13 +250,6 @@ export default function Listen() {
                   </div>
                 </div>
               </div>
-              <audio
-                ref={audioRef}
-                preload="none"
-                onPlaying={() => setPlayer("playing")}
-                onWaiting={() => setPlayer((p) => (p === "playing" ? "buffering" : p))}
-                onError={() => setPlayer((p) => (p === "idle" ? p : "error"))}
-              />
             </div>
           </section>
 
@@ -367,9 +296,9 @@ export default function Listen() {
           </div>
         </main>
         <footer className="mt-16 text-sm text-faint">
-          <a href="/admin" className="hover:text-muted">
+          <Link to="/admin" className="hover:text-muted">
             Studio sign-in
-          </a>
+          </Link>
         </footer>
       </div>
     </div>

@@ -18,10 +18,15 @@ import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { HttpError, audit, guard, idParam, notFound, parse } from "../http.js";
-import { analyzeMedia } from "../services/media/loudness.js";
+import { analyzeMedia, recomputeAllAutocue, recomputeAutocue } from "../services/media/loudness.js";
 import { applySuggestion, suggestForMedia } from "../services/media/metadata-lookup.js";
 import { saveArtwork } from "../services/media/probe.js";
-import { importFile, mediaRoots, scanLibrary } from "../services/media/scanner.js";
+import {
+  importFile,
+  isScanRunning,
+  mediaRoots,
+  scanLibraryOnce,
+} from "../services/media/scanner.js";
 
 const MAX_UPLOAD = 500 * 1024 * 1024;
 const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300"><rect width="300" height="300" fill="#111915"/><circle cx="150" cy="150" r="90" fill="none" stroke="#22c55e" stroke-width="10" opacity=".6"/><circle cx="150" cy="150" r="22" fill="#22c55e" opacity=".8"/></svg>`;
@@ -72,15 +77,19 @@ const tagPatch = z.object({
 const mediaPatch = tagPatch.extend({
   cue_in: z.number().min(0).nullable().optional(),
   cue_out: z.number().min(0).nullable().optional(),
+  /** File time where the intro ends / outro starts (studio timers). */
+  intro_end: z.number().min(0).nullable().optional(),
+  outro_start: z.number().min(0).nullable().optional(),
   fade_in: z.number().min(0).max(30).nullable().optional(),
   fade_out: z.number().min(0).max(30).nullable().optional(),
   gain_db: z.number().min(-30).max(20).nullable().optional(),
+  /** 'auto' re-detects the cue points; 'manual' protects the values below. */
+  cue_source: z.enum(["auto", "manual"]).optional(),
   status: z.enum(["ok", "disabled"]).optional(),
 });
 
 export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Promise<void> {
   const { repos } = ctx;
-  let scanRunning = false;
 
   app.get(
     "/api/media",
@@ -101,7 +110,7 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
       byStatus: repos.media.stats(),
       total: repos.media.count(),
       watcher: ctx.watcher.status,
-      scanRunning,
+      scanRunning: isScanRunning(),
       roots: mediaRoots(ctx.config),
     }),
   );
@@ -156,15 +165,14 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
       config: { summary: "Start a folder scan", tags: ["media"] },
     },
     async (req, reply) => {
-      if (scanRunning) throw new HttpError(409, "scan_running", "a scan is already running");
-      scanRunning = true;
+      const scan = scanLibraryOnce(repos, ctx.config, { log: ctx.log });
+      if (!scan) throw new HttpError(409, "scan_running", "a scan is already running");
       audit(ctx, req, "media.scan");
-      void scanLibrary(repos, ctx.config, { log: ctx.log })
+      void scan
         .then((r) =>
           ctx.bus.publish("media", "media:scan-done", { ...r, errors: r.errors.slice(0, 20) }),
         )
-        .catch((e) => ctx.log(`scan failed: ${(e as Error).message}`))
-        .finally(() => (scanRunning = false));
+        .catch((e) => ctx.log(`scan failed: ${(e as Error).message}`));
       return reply.status(202).send({ started: true });
     },
   );
@@ -300,8 +308,35 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
     async (req) => {
       const { id } = parse(idParam, req.params);
       const body = parse(mediaPatch, req.body);
-      if (!repos.media.get(id)) throw notFound("media");
-      const media = repos.media.update(id, body as Record<string, never>);
+      const existing = repos.media.get(id);
+      if (!existing) throw notFound("media");
+      // Switching back to automatic re-detects from the stored envelope; a manual
+      // edit pins the cue/fade values so later analyses leave them alone.
+      if (body.cue_source === "auto") {
+        if (!recomputeAutocue(repos, id, {}, true))
+          throw new HttpError(
+            409,
+            "no_analysis",
+            "No loudness envelope yet: run Measure loudness first",
+          );
+      } else if (
+        body.cue_source === "manual" ||
+        // Only a changed value pins (the editor always sends all fields).
+        (["cue_in", "cue_out", "fade_in", "fade_out"] as const).some(
+          (k) => body[k] !== undefined && body[k] !== existing[k],
+        )
+      ) {
+        body.cue_source = "manual";
+      }
+      const patch = { ...(body as Record<string, never>) };
+      if (body.cue_source === "auto") {
+        // The detected values were written by recomputeAutocue; don't overwrite them.
+        delete (patch as Record<string, unknown>).cue_in;
+        delete (patch as Record<string, unknown>).cue_out;
+        delete (patch as Record<string, unknown>).fade_in;
+        delete (patch as Record<string, unknown>).fade_out;
+      }
+      const media = repos.media.update(id, patch);
       audit(ctx, req, "media.update", "media", id, body);
       return { media };
     },
@@ -442,18 +477,40 @@ export async function libraryRoutes(app: FastifyInstance, ctx: AppContext): Prom
   );
 
   app.post(
+    "/api/media/autocue/recompute",
+    {
+      preHandler: guard("media:manage"),
+      config: {
+        summary: "Recompute cue points for the whole library from stored loudness envelopes",
+        tags: ["media"],
+      },
+    },
+    async (req) => {
+      const body = parse(
+        z.object({ adoptManual: z.boolean().default(false) }).default({}),
+        req.body ?? {},
+      );
+      const report = recomputeAllAutocue(repos, {}, body.adoptManual);
+      audit(ctx, req, "media.autocue", "media", null, report);
+      return report;
+    },
+  );
+
+  app.post(
     "/api/media/:id/analyze",
     {
       preHandler: guard("media:manage"),
-      config: { summary: "Re-run loudness analysis", tags: ["media"] },
+      config: { summary: "Re-run loudness analysis and cue detection", tags: ["media"] },
     },
     async (req) => {
       const { id } = parse(idParam, req.params);
       if (!repos.media.get(id)) throw notFound("media");
+      const body = parse(z.object({ adopt: z.boolean().default(false) }), req.body ?? {});
       const result = await analyzeMedia(
         repos,
         id,
         repos.settings.get("audio.targetLufs", ctx.config.audio.targetLufs),
+        { adopt: body.adopt },
       );
       audit(ctx, req, "media.analyze", "media", id, result);
       return { result, media: repos.media.get(id) };

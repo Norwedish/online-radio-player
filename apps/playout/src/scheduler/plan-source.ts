@@ -49,6 +49,8 @@ export function mediaToItem(m: MediaRow, extra: Partial<QueueItem> = {}): QueueI
     source: "automation",
     requestId: null,
     artworkUrl: m.artwork_path ? `/api/media/${m.id}/artwork` : null,
+    intro: m.intro_end && m.intro_end > cueIn ? m.intro_end - cueIn : null,
+    outro: m.outro_start && m.outro_start > cueIn ? m.outro_start - cueIn : null,
     ...extra,
   };
 }

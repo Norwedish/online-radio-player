@@ -18,8 +18,8 @@ async function login(page: Page, username: string): Promise<void> {
 test.describe.configure({ mode: "serial" });
 
 test("unauthenticated admin redirects to login, wrong password is refused", async ({ page }) => {
-  await page.goto("/admin/playout");
-  await expect(page).toHaveURL(/\/login\?next=%2Fadmin%2Fplayout/);
+  await page.goto("/admin/studio");
+  await expect(page).toHaveURL(/\/login\?next=%2Fadmin%2Fstudio/);
   await page.getByLabel("Username or email").fill("admin");
   await page.getByLabel("Password").fill("not-the-password");
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -29,7 +29,7 @@ test("unauthenticated admin redirects to login, wrong password is refused", asyn
 test("roles: DJ sees no Users/Settings, admin does", async ({ page }) => {
   await login(page, "dj");
   const nav = page.getByRole("navigation", { name: "Main" });
-  await expect(nav.getByRole("link", { name: "Live studio" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Studio" })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Users" })).toHaveCount(0);
   await expect(nav.getByRole("link", { name: "Settings" })).toHaveCount(0);
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -39,12 +39,17 @@ test("roles: DJ sees no Users/Settings, admin does", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("playout console: skip changes the track, pause/resume and the queue survive a refresh", async ({
+test("studio automation: skip changes the track, pause/resume and the queue survive a refresh", async ({
   page,
 }) => {
   await login(page, "operator");
+  // The old console URL redirects to the studio.
   await page.goto("/admin/playout");
-  const title = page.locator("main p.font-display").first();
+  await expect(page).toHaveURL(/\/admin\/studio$/);
+  const automation = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Automation", exact: true }) });
+  const title = automation.locator("p.font-display").first();
   await expect(title).not.toHaveText("");
   const before = await title.textContent();
   await page.getByRole("button", { name: "Skip", exact: true }).click();
@@ -56,6 +61,51 @@ test("playout console: skip changes the track, pause/resume and the queue surviv
   await page.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(page.getByText("paused", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/locked/).first()).toBeVisible();
+});
+
+test("studio players: playing A takes over from automation, hand back resumes it", async ({
+  page,
+}) => {
+  await login(page, "operator");
+  await page.goto("/admin/studio");
+  const a = page.getByRole("region", { name: "Player A" });
+  // "Load" opens the library drawer at the bottom of the screen with the search focused.
+  await a.getByRole("button", { name: "Load", exact: true }).click();
+  const library = page.getByRole("region", { name: "Library" });
+  await expect(library.getByLabel("Search the library")).toBeFocused();
+  await library.getByLabel("Search the library").fill("Coastline");
+  await library
+    .getByRole("button", { name: /into player A$/ })
+    .first()
+    .click();
+  await expect(a.getByText("Cued", { exact: true })).toBeVisible();
+  // Drag-and-drop from the drawer onto player B.
+  const b = page.getByRole("region", { name: "Player B" });
+  await library.getByRole("listitem").first().dragTo(b);
+  await expect(b.getByText("Cued", { exact: true })).toBeVisible();
+  // …and onto pre-listen.
+  const prelisten = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Pre-listen" }) });
+  await library.getByRole("listitem").first().dragTo(prelisten);
+  await expect(prelisten).toContainText("Coastline");
+  // Closed, only the tab button remains (the drawer would cover the decks on this screen).
+  await library.getByRole("button", { name: "Close the library" }).click();
+  await expect(library).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Library", exact: true })).toBeVisible();
+  await a.getByRole("button", { name: "Play player A" }).click();
+  await expect(page.getByText("MANUAL", { exact: true })).toBeVisible();
+  await expect(a.getByText("On air", { exact: true })).toBeVisible();
+  // The remaining-time counter runs.
+  const remaining = a.getByLabel("Player A remaining");
+  const first = await remaining.textContent();
+  await expect(remaining).not.toHaveText(first ?? "", { timeout: 5_000 });
+  await page.getByRole("button", { name: "Hand back to automation" }).click();
+  await expect(page.getByText("AUTOMATION", { exact: true })).toBeVisible();
+  await expect(a.getByText("Cued", { exact: true })).toBeVisible({ timeout: 10_000 });
+  // The tab opens the drawer again.
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Library" })).toBeVisible();
 });
 
 test("schedule: editing hour 14 persists after reload", async ({ page }) => {
@@ -124,11 +174,11 @@ test("events: create and start a stinger event", async ({ page }) => {
 
 test("live studio: fake mic goes live, ducks, and ends", async ({ page }) => {
   await login(page, "dj");
-  await page.goto("/admin/live");
+  await page.goto("/admin/studio");
   await page.getByRole("button", { name: "Enable microphone" }).click();
   await page.getByRole("button", { name: "Go live" }).click();
   await expect(page.getByText(/On air \d/)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("Live mic")).toBeVisible();
+  await expect(page.getByText("Live mic", { exact: true }).first()).toBeVisible();
   // The browser uplink really reaches the worker and audio flows.
   await expect(page.getByText(/Uplink connected · sent (0\.[1-9]|[1-9])/)).toBeVisible({
     timeout: 15_000,

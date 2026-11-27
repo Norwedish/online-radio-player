@@ -10,8 +10,7 @@ import { LoginPage, ForgotPasswordPage, ResetPasswordPage } from "./pages/auth/A
 import "./styles.css";
 
 const Dashboard = lazy(() => import("./pages/admin/Dashboard"));
-const Playout = lazy(() => import("./pages/admin/Playout"));
-const LiveStudio = lazy(() => import("./pages/admin/LiveStudio"));
+const Studio = lazy(() => import("./pages/admin/Studio"));
 const Schedule = lazy(() => import("./pages/admin/Schedule"));
 const Playlists = lazy(() => import("./pages/admin/Playlists"));
 const MediaLibrary = lazy(() => import("./pages/admin/Media"));
@@ -57,8 +56,10 @@ createRoot(document.getElementById("root")!).render(
                 }
               >
                 <Route index element={<Dashboard />} />
-                <Route path="playout" element={<Playout />} />
-                <Route path="live" element={<LiveStudio />} />
+                <Route path="studio" element={<Studio />} />
+                {/* The old Playout and Live studio pages are combined into the Studio. */}
+                <Route path="playout" element={<Navigate to="/admin/studio" replace />} />
+                <Route path="live" element={<Navigate to="/admin/studio" replace />} />
                 <Route path="schedule" element={<Schedule />} />
                 <Route path="playlists" element={<Playlists />} />
                 <Route path="media" element={<MediaLibrary />} />

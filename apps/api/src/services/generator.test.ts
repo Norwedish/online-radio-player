@@ -118,6 +118,52 @@ describe("GeneratorService (M3.4–M3.7)", () => {
     ).toBe(true);
   });
 
+  it("playlist weight sets each playlist's share of the picks, whatever its size (AzuraCast)", () => {
+    const pl = (n: string) => env.repos.playlists.getByName(n)!;
+    const songs = (prefix: string, n: number) =>
+      Array.from(
+        { length: n },
+        (_, i) =>
+          env.repos.media.upsert({
+            path: `/tmp/weights/${prefix}-${i}.mp3`,
+            status: "ok",
+            duration: 200,
+            artist: `${prefix} artist ${i}`,
+            title: `${prefix} ${i}`,
+          }).row.id,
+      );
+    const seventies = pl("70s");
+    const nineties = pl("90s");
+    const keep = (id: number) =>
+      env.repos.playlists.items(id).map((i) => ({ mediaId: i.media_id, weight: i.weight }));
+    const before70 = keep(seventies.id);
+    const before90 = keep(nineties.id);
+    env.repos.playlists.replaceItems(
+      seventies.id,
+      songs("w70", 2).map((mediaId) => ({ mediaId })),
+    );
+    env.repos.playlists.replaceItems(
+      nineties.id,
+      songs("w90", 6).map((mediaId) => ({ mediaId })),
+    );
+    env.repos.playlists.update(seventies.id, { weight: 3 });
+    env.repos.playlists.update(nineties.id, { weight: 1 });
+    const pool = service.pool(
+      "2030-05-02",
+      3,
+      { ...service.settings(), fallback_mode: true },
+      new Map(),
+    );
+    const share = (id: number) =>
+      pool.music.filter((c) => c.playlistId === id).reduce((s, c) => s + c.weight, 0);
+    // 2 songs at weight 3 vs 6 songs at weight 1: the 70s get 3× the picks, not 1/3.
+    expect(share(seventies.id) / share(nineties.id)).toBeCloseTo(3, 5);
+    env.repos.playlists.update(seventies.id, { weight: seventies.weight });
+    env.repos.playlists.update(nineties.id, { weight: nineties.weight });
+    env.repos.playlists.replaceItems(seventies.id, before70);
+    env.repos.playlists.replaceItems(nineties.id, before90);
+  });
+
   it("fallback mode draws from decades + General", () => {
     service.setFallbackMode(true);
     const r = service.generate({ date: "2030-05-02", hours: [3], nowMs: at("2030-05-01", 12) });

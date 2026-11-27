@@ -29,8 +29,13 @@ export const MEDIA_WRITABLE = [
   "gain_db",
   "cue_in",
   "cue_out",
+  "intro_end",
+  "outro_start",
   "fade_in",
   "fade_out",
+  "autocue_json",
+  "loudness_envelope",
+  "cue_source",
   "artwork_path",
   "hash",
   "size",
@@ -395,6 +400,26 @@ export class MediaRepository {
       .map((r) => mapMedia(r as Raw)!);
   }
 
+  /** Every row that already has a loudness envelope (recompute cue points from it). */
+  allWithEnvelope(): MediaRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM media WHERE station_id = ? AND status = 'ok' AND loudness_envelope IS NOT NULL ORDER BY id",
+      )
+      .all(this.stationId)
+      .map((r) => mapMedia(r as Raw)!);
+  }
+
+  /** Rows whose cue points have never been analysed (loudness exists, envelope missing). */
+  needsAutocue(limit = 50): MediaRow[] {
+    return this.db
+      .prepare(
+        "SELECT * FROM media WHERE station_id = ? AND status = 'ok' AND loudness_lufs IS NOT NULL AND loudness_envelope IS NULL ORDER BY id LIMIT ?",
+      )
+      .all(this.stationId, limit)
+      .map((r) => mapMedia(r as Raw)!);
+  }
+
   addSuggestion(mediaId: number, source: string, payload: unknown): number {
     const info = this.db
       .prepare(
@@ -501,6 +526,18 @@ export class PlaylistRepository {
         .prepare("SELECT * FROM playlists WHERE name = ? AND station_id = ?")
         .get(name, this.stationId) as Raw,
     );
+  }
+
+  /** Roles of the playlists this media is in (news bulletins, jingles, music). */
+  rolesForMedia(mediaId: number): PlaylistRole[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT DISTINCT p.role FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id
+           WHERE i.media_id = ? AND p.station_id = ?`,
+        )
+        .all(mediaId, this.stationId) as { role: PlaylistRole }[]
+    ).map((r) => r.role);
   }
 
   create(input: {

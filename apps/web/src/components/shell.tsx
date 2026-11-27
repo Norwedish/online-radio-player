@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -14,7 +14,6 @@ import {
   LogOut,
   Menu,
   MessageSquareText,
-  Mic,
   Radio,
   Settings,
   Siren,
@@ -26,6 +25,7 @@ import { applyState, startLive, stopLive, useLive } from "../hooks/live";
 import { get, post, errorMessage } from "../lib/api";
 import type { Permission, PlayoutState } from "../lib/types";
 import { StudioClock } from "./meters";
+import { MiniPlayer } from "./MiniPlayer";
 import { Button, Spinner, cx } from "./ui";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -44,8 +44,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 const NAV: { to: string; label: string; icon: typeof Radio; perm: Permission }[] = [
   { to: "/admin", label: "Dashboard", icon: Gauge, perm: "playout:view" },
-  { to: "/admin/playout", label: "Playout", icon: Radio, perm: "playout:view" },
-  { to: "/admin/live", label: "Live studio", icon: Mic, perm: "live:broadcast" },
+  { to: "/admin/studio", label: "Studio", icon: Radio, perm: "playout:view" },
   { to: "/admin/schedule", label: "Schedule", icon: CalendarClock, perm: "schedule:view" },
   { to: "/admin/playlists", label: "Playlists", icon: ListMusic, perm: "media:view" },
   { to: "/admin/media", label: "Media library", icon: Library, perm: "media:view" },
@@ -185,12 +184,13 @@ export function AdminShell() {
           >
             <LogOut className="size-4" aria-hidden /> Sign out
           </button>
-          <a
-            href="/listen"
+          {/* Client-side link: a full page load would stop the stream monitor. */}
+          <Link
+            to="/listen"
             className="mt-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:text-legend"
           >
             <Headphones className="size-4" aria-hidden /> Listener page
-          </a>
+          </Link>
         </div>
       </aside>
       {open ? (
@@ -218,7 +218,8 @@ export function AdminShell() {
             onAir={Boolean(state && !state.stopped && !state.paused)}
             live={Boolean(state?.live.active)}
           />
-          <div className="ml-auto flex items-center gap-4 text-sm">
+          <div className="ml-auto flex min-w-0 items-center gap-4 text-sm">
+            <MiniPlayer />
             <span className="hidden text-muted md:inline">
               <span className="font-display text-lg text-legend tnum">{listeners}</span> listening
             </span>

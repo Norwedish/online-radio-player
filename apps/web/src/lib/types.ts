@@ -78,6 +78,11 @@ export interface QueueItem {
   source: "automation" | "request" | "manual" | "event" | "live";
   requestId: number | null;
   artworkUrl: string | null;
+  /** File time where playback starts (seconds). */
+  cueIn?: number;
+  /** Seconds after cue-in where the intro ends / the outro starts (null = not marked). */
+  intro?: number | null;
+  outro?: number | null;
 }
 
 export interface NowPlaying extends QueueItem {
@@ -116,8 +121,35 @@ export interface LiveStatus {
   inputPeakDb: number;
 }
 
+export type StudioPlayerId = "A" | "B";
+
+export interface StudioPlayer {
+  id: StudioPlayerId;
+  item: QueueItem | null;
+  status: "empty" | "loaded" | "playing" | "paused";
+  /** Seconds since cue-in. */
+  position: number;
+  gainDb: number;
+  cuePoint: number;
+  loop: boolean;
+  autoNext: boolean;
+  fading: boolean;
+}
+
+export interface StudioState {
+  manual: boolean;
+  players: StudioPlayer[];
+  carts: {
+    uid: string;
+    mediaId: number | null;
+    title: string;
+    duration: number;
+    position: number;
+  }[];
+}
+
 export interface PlayoutState {
-  mode: "idle" | "autoplay" | "live" | "event" | "interrupt" | "emergency";
+  mode: "idle" | "autoplay" | "live" | "event" | "interrupt" | "emergency" | "manual";
   paused: boolean;
   stopped: boolean;
   nowPlaying: NowPlaying | null;
@@ -142,6 +174,8 @@ export interface PlayoutState {
   boundaryLog: BoundaryEntry[];
   currentPlan: { planId: number | null; date: string | null; hour: number | null };
   uptimeSeconds: number;
+  /** Absent while talking to an older worker. */
+  studio?: StudioState;
 }
 
 export interface Meter {
@@ -149,6 +183,8 @@ export interface Meter {
   masterRms: number;
   buses: { name: string; peak: number; rms: number; gain: number }[];
   duckGain: number;
+  /** Studio players ("A", "B") and the cart bank ("carts"): level and live position. */
+  players?: { id: string; peak: number; rms: number; position: number }[];
 }
 
 export interface Media {
@@ -169,8 +205,16 @@ export interface Media {
   gain_db: number | null;
   cue_in: number | null;
   cue_out: number | null;
+  intro_end: number | null;
+  outro_start: number | null;
   fade_in: number | null;
   fade_out: number | null;
+  /** Last automatic cue result (JSON) from loudness analysis. */
+  autocue_json: string | null;
+  /** Momentary loudness envelope (base64); not shown, used for recomputes. */
+  loudness_envelope: string | null;
+  /** 'auto': analysis may set the cue points; 'manual': the user's values win. */
+  cue_source: "auto" | "manual" | null;
   artwork_path: string | null;
   hash: string | null;
   size: number | null;

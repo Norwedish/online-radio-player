@@ -2,7 +2,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { z } from "zod";
-import { can, type CommandType, type QueueItem } from "@radio/shared";
+import { randomToken } from "@radio/db";
+import { can, studioPlayerIdSchema, type CommandType, type QueueItem } from "@radio/shared";
 import type { AppContext } from "../context.js";
 import { HttpError, audit, guard, idParam, notFound, parse } from "../http.js";
 import { mediaQueueItem } from "../services/queue-items.js";
@@ -44,7 +45,11 @@ export async function playoutRoutes(app: FastifyInstance, ctx: AppContext): Prom
   const mediaItem = (mediaId: number, extra: Partial<QueueItem> = {}): QueueItem => {
     const m = repos.media.get(mediaId);
     if (!m || m.status !== "ok") throw notFound("playable media");
-    return mediaQueueItem(m, extra);
+    // A track from the Nieuws playlist must count as news: the engine re-reads its
+    // cue points just before air, because bulletins are replaced under the same name.
+    const roles = repos.playlists.rolesForMedia(m.id);
+    const kind = roles.includes("news") ? "news" : roles.includes("jingle") ? "jingle" : "music";
+    return mediaQueueItem(m, { kind, ...extra });
   };
 
   /** Sends a command, audits it, returns the new state (M6.1/M6.3). */
@@ -237,6 +242,170 @@ export async function playoutRoutes(app: FastifyInstance, ctx: AppContext): Prom
         });
       else ctx.alerts.resolve("dead_air");
       return res;
+    },
+  );
+
+  /* ── Studio: manual players A/B, cart pads, manual mode ─────────────── */
+
+  const playerParam = z.object({ id: studioPlayerIdSchema });
+
+  app.post(
+    "/api/studio/manual",
+    {
+      ...control,
+      config: { ...control.config, summary: "Manual mode on (take over) or off (hand back)" },
+    },
+    async (req) =>
+      command(req, "studio:manual", parse(z.object({ enabled: z.boolean() }), req.body)),
+  );
+
+  app.post(
+    "/api/studio/players/:id/load",
+    {
+      ...control,
+      config: {
+        ...control.config,
+        summary: "Load a library track (mediaId) or a queued item (uid) into a player",
+      },
+    },
+    async (req) => {
+      const { id } = parse(playerParam, req.params);
+      const body = parse(
+        z
+          .object({
+            mediaId: z.number().int().optional(),
+            uid: z.string().optional(),
+            cuePoint: z.number().min(0).optional(),
+          })
+          .refine((b) => (b.mediaId === undefined) !== (b.uid === undefined), {
+            message: "pass either mediaId or uid",
+          }),
+        req.body,
+      );
+      return command(
+        req,
+        "studio:load",
+        body.uid
+          ? { player: id, queueUid: body.uid, cuePoint: body.cuePoint }
+          : { player: id, item: mediaItem(body.mediaId!), cuePoint: body.cuePoint },
+        { player: id, ...body },
+      );
+    },
+  );
+
+  for (const action of ["play", "pause", "stop", "eject"] as const) {
+    app.post(
+      `/api/studio/players/:id/${action}`,
+      { ...control, config: { ...control.config, summary: `Player ${action}` } },
+      async (req) => {
+        const { id } = parse(playerParam, req.params);
+        return command(req, `studio:${action}`, { player: id });
+      },
+    );
+  }
+
+  app.post(
+    "/api/studio/players/:id/seek",
+    { ...control, config: { ...control.config, summary: "Seek a player (seconds after cue-in)" } },
+    async (req) => {
+      const { id } = parse(playerParam, req.params);
+      const { position } = parse(z.object({ position: z.number().min(0) }), req.body);
+      return command(req, "studio:seek", { player: id, position });
+    },
+  );
+
+  app.post(
+    "/api/studio/players/:id/fade",
+    {
+      ...control,
+      config: { ...control.config, summary: "Fade a player out, then stop at its cue point" },
+    },
+    async (req) => {
+      const { id } = parse(playerParam, req.params);
+      const { seconds } = parse(
+        z.object({ seconds: z.number().min(0.1).max(30).default(3) }),
+        req.body ?? {},
+      );
+      return command(req, "studio:fade", { player: id, seconds });
+    },
+  );
+
+  app.patch(
+    "/api/studio/players/:id",
+    {
+      ...control,
+      config: { ...control.config, summary: "Player fader, loop, cue point, auto-next" },
+    },
+    async (req) => {
+      const { id } = parse(playerParam, req.params);
+      const body = parse(
+        z.object({
+          gainDb: z.number().min(-60).max(12).optional(),
+          loop: z.boolean().optional(),
+          cuePoint: z.number().min(0).optional(),
+          autoNext: z.boolean().optional(),
+        }),
+        req.body,
+      );
+      // Fader moves are frequent: no audit entry for gain-only changes.
+      const state = await worker.send("studio:set", { player: id, ...body });
+      if (Object.keys(body).some((k) => k !== "gainDb"))
+        audit(ctx, req, "playout.studio:set", null, null, { player: id, ...body });
+      return { state };
+    },
+  );
+
+  app.post(
+    "/api/studio/carts",
+    { ...control, config: { ...control.config, summary: "Fire a cart pad (overlaps the music)" } },
+    async (req) => {
+      const body = parse(z.object({ mediaId: z.number().int() }), req.body);
+      return command(
+        req,
+        "studio:cart",
+        { item: mediaItem(body.mediaId, { kind: "jingle" }) },
+        body,
+      );
+    },
+  );
+
+  app.post(
+    "/api/studio/carts/stop",
+    { ...control, config: { ...control.config, summary: "Stop one cart (uid) or all carts" } },
+    async (req) =>
+      command(
+        req,
+        "studio:cart_stop",
+        parse(z.object({ uid: z.string().optional() }), req.body ?? {}),
+      ),
+  );
+
+  app.post(
+    "/api/studio/monitor",
+    {
+      preHandler: guard("playout:view"),
+      config: {
+        ...controlLimit,
+        tags: ["playout"],
+        summary: "One-time token for the pre-Stereo Tool studio monitor (WebSocket PCM)",
+      },
+    },
+    async (req) => {
+      const body = parse(
+        z.object({
+          mic: z.boolean().default(false),
+          rate: z.union([z.literal(48000), z.literal(24000)]).default(48000),
+        }),
+        req.body ?? {},
+      );
+      const token = randomToken(24);
+      await worker.send("monitor:allow", { token, ...body });
+      return {
+        wsPath: `/ws/live/monitor?token=${encodeURIComponent(token)}`,
+        rate: body.rate,
+        channels: 2,
+        mic: body.mic,
+      };
     },
   );
 

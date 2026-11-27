@@ -100,10 +100,10 @@ export default function Dashboard() {
               ))}
             </ol>
             <Link
-              to="/admin/playout"
+              to="/admin/studio"
               className="mt-2 inline-block text-sm text-tally hover:underline"
             >
-              Open the playout console
+              Open the studio
             </Link>
           </div>
         </Panel>

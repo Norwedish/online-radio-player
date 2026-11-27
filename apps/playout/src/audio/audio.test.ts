@@ -16,7 +16,8 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "radio-deck-"));
   long = tone(dir, "long", 30, 440, 0.5);
 });
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+// Retries: on Windows an FFmpeg process that is still exiting can briefly lock the files.
+afterAll(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }));
 
 /** Pulls `seconds` of audio from a deck in 10 ms blocks, yielding so FFmpeg can fill the buffer. */
 async function pull(deck: Deck, seconds: number, out?: Float32Array[]): Promise<void> {
